@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TO do List</title>
+    <link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css'>
+    <link rel="stylesheet" href="style.css">
+    <script src="script.js" defer> </script>
+
+
+</head>
+
+<body>
+    <header>
+        <div class="nav1">
+            <h1>NotNotion</h1>
+            <h3>Manage and search your pending task in clicks</h3>
+        </div>
+    </header>
+    <div class="mainframe">
+        <div class="search">
+            <div class="searchbar">
+                <input type="text" placeholder="search task" class="searchbox">
+            </div>
+            <div class="clear">
+                <i class='fa fa-remove red-color fa-2x reset'></i>
+
+            </div>
+        </div>
+        <div class="tasklist">
+            
+             <ul class = "listitem">
+                <li>
+                    <div id="list">
+                        <div class="contents">
+                         <p class="innertext"></p>
+                        </div>
+                        <div class="deleteicon">
+                            <i class="fa fa-trash" aria-hidden="true" class="icons" id="delete"></i>
+        
+                        </div>
+                    </div>
+             </li>
+                
+            </ul>
+            
+            
+            <form id="additems">
+                <input type="text" placeholder="add items" id="filledtext" name="field1">
+                <input type="submit" value="Add" id="submit">
+
+            </form>
+
+        </div>
+        <div class="taskclear">
+            <div class="taskcontent">
+
+            </div>
+            <div class="clearbottom">
+
+            </div>
+        </div>
+       <div class="message">
+        <span>it has 2 items</h3></span>
+        <button class ="clear">clear</button>
+        </div>
+    </div>
+
+</body>
+
+</html>
