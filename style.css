@@ -1,8 +1,12 @@
+@import url('https://fonts.googleapis.com/css2?family=Young+Serif&display=swap');
+
+  @import url('https://fonts.googleapis.com/css2?family=Young+Serif&display=swap');
 *{
     padding :0;
     box-sizing: border-box;
     margin:0px;
     list-style-type: none;
+    font-family: 'Young Serif', serif;
 }
 root {
 	--primary-hs: 250 30%;
@@ -110,7 +114,8 @@ footer {
     max-width: 450px;
     border-radius: 5px;
     padding: 0rem;
-    
+    background-color: #121212;
+    font-family: 'Young Serif', serif;
 }
 #list {
     min-width: 350px;
@@ -161,6 +166,7 @@ cursor: pointer;
     padding: 0.2rem;
     float: right;
     border-radius: 0.2rem;
+    cursor: pointer;
 }
 #filledtext input[type="text"]
 {
@@ -171,13 +177,15 @@ li{
     max-width: 450px;
     display: flex;
 
-    padding: 1rem;  
-    background-color: rgb(30, 209, 149);
+    padding: .4rem;  
+    background-color: #383838;
+    color:#fff;
     font-size: 1.5rem;
     margin-bottom: 0.5rem;
     display: flex;
     justify-content: space-between;
-
+    box-shadow: 0 4px 5px rgba(0,0,0,0.2);
+    border-radius: 5px;
 }
 #delete
 {
