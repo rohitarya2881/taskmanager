@@ -1,57 +1,85 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Meta tags for character set and viewport -->
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- Page title -->
     <title>TO do List</title>
-    <link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css'>
-    <link rel="stylesheet" href="style.css">
-    <script src="script.js" defer> </script>
 
+    <!-- Font Awesome CSS library -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css" />
 
+    <!-- External stylesheet -->
+    <link rel="stylesheet" href="style.css" />
+
+    <!-- External JavaScript file with defer attribute for async loading -->
+    <script src="script.js" defer></script>
 </head>
 
 <body>
+    <!-- Header section -->
     <header>
+        <!-- Navigation container with NotNotion title and description -->
         <div class="nav1">
-            <h1><center>NotNotion</center></h1>
-            <h3><center>Manage and search your pending task in clicks</center></h3>
+            <h1>
+                <!-- Centered NotNotion title -->
+                <center>NotNotion</center>
+            </h1>
+            <h3>
+                <!-- Centered description -->
+                <center>Manage and search your pending task in clicks</center>
+            </h3>
         </div>
     </header>
+
+    <!-- Main content container -->
     <div class="mainframe">
+        <!-- Search form with input and clear button -->
         <form class="search" id="form_id">
             <div class="searchbar">
-                <input type="text" name="task" placeholder="search task" class="searchbox" id ="resetsearch">
+                <!-- Input field for searching tasks -->
+                <input
+                    type="text"
+                    name="task"
+                    placeholder="search task"
+                    class="searchbox"
+                    id="resetsearch"
+                />
             </div>
             <div class="clear">
-                <i class='fa fa-remove red-color fa-2x resets'></i>
-
+                <!-- Clear button with remove icon -->
+                <i class="fa fa-remove red-color fa-2x resets"></i>
             </div>
         </form>
+
+        <!-- Task list container -->
         <div class="tasklist">
-            
-             <ul class = "listitem">
-              
-                
-            </ul>
-            
-            
+            <!-- Unordered list to display tasks -->
+            <ul class="listitem"></ul>
+
+            <!-- Form for adding new items to the task list -->
             <form id="additems">
-                <input type="text" placeholder="add items" id="filledtext" name="field1">
-                <input type="submit" value="Add" id="submit">
-
+                <!-- Input field for adding new items -->
+                <input
+                    type="text"
+                    placeholder="add items"
+                    id="filledtext"
+                    name="field1"
+                />
+                <!-- Submit button to add items -->
+                <input type="submit" value="Add" id="submit" />
             </form>
+        </div>
 
-        </div>
-        <div class="taskclear">
-            
-        </div>
-       
+        <!-- Container for clearing tasks -->
+        <div class="taskclear"></div>
     </div>
-    <script>
-       
-     </script>
-</body>
 
+    <!-- Inline script (you can add your JavaScript code here) -->
+    <script>
+        // Your JavaScript code goes here
+    </script>
+</body>
 </html>
