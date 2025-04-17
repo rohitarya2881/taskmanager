@@ -1,85 +1,810 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <!-- Meta tags for character set and viewport -->
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    
-    <!-- Page title -->
-    <title>TO do List</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Productivity Timer with Breaks</title>
+  <style>
+    /* Base Reset */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
 
-    <!-- Font Awesome CSS library -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css" />
+    /* Body Styles */
+    body {
+      font-family: 'Roboto', Arial, sans-serif;
+      background: #f3f4f7;
+      color: #333;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
 
-    <!-- External stylesheet -->
-    <link rel="stylesheet" href="style.css" />
+    /* Header Styles */
+    header {
+      background: linear-gradient(135deg, #1d4ed8, #2563eb);
+      color: white;
+      padding: 20px;
+      text-align: center;
+      font-size: 28px;
+      font-weight: bold;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+    }
 
-    <!-- External JavaScript file with defer attribute for async loading -->
-    <script src="script.js" defer></script>
+    /* Main Container */
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    /* Card Styles */
+    .card {
+      width: 100%;
+      max-width: 700px;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+      padding: 25px;
+      margin-bottom: 20px;
+      transition: transform 0.3s, box-shadow 0.3s;
+    }
+
+    .card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
+    }
+
+    /* Form Elements */
+    label, h2 {
+      color: #444;
+      font-weight: bold;
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    select, input, button {
+      width: 100%;
+      padding: 12px;
+      margin-bottom: 15px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 16px;
+      transition: all 0.3s;
+    }
+
+    select:focus, input:focus {
+      border-color: #2563eb;
+      outline: none;
+      box-shadow: 0 0 4px rgba(37, 99, 235, 0.5);
+    }
+
+    button {
+      background: #2563eb;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      border: none;
+      transition: background 0.3s;
+      width: 20%
+    }
+
+    button:hover {
+      background: #1d4ed8;
+    }
+
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    /* Task List */
+    ul {
+      list-style: none;
+      padding: 0;
+    }
+
+    li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      background: #f9f9f9;
+      transition: box-shadow 0.3s, background 0.3s;
+    }
+
+    li:hover {
+      background: #eef2f7;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    li label {
+      font-size: 16px;
+      color: #333;
+      margin-right: 10px;
+      flex: 1;
+    }
+
+    li .custom-checkbox {
+      position: relative;
+      width: 20px;
+      height: 20px;
+      border: 2px solid #0073e6;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+      transition: background-color 0.3s, box-shadow 0.3s;
+    }
+
+    li .custom-checkbox:after {
+      content: '';
+      position: absolute;
+      top: 4px;
+      left: 6px;
+      width: 6px;
+      height: 10px;
+      border: solid #0073e6;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    li input[type="checkbox"] {
+      display: none;
+    }
+
+    li input[type="checkbox"]:checked + .custom-checkbox {
+      background: #0073e6;
+    }
+
+    li input[type="checkbox"]:checked + .custom-checkbox:after {
+      opacity: 1;
+    }
+
+    /* Canvas Styles */
+    #canvas {
+      position: relative;
+      width: 100%;
+      max-width: 640px;
+      height: 360px;
+      background: #1f2937;
+      border-radius: 12px;
+      margin-top: 20px;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Video Container */
+    .video-container {
+      position: relative;
+      width: 640px;
+      height: 480px;
+      margin: auto;
+    }
+
+    /* Control Buttons */
+    .control-buttons {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 20px;
+      flex-wrap: wrap;
+    }
+
+    .control-buttons button {
+      width: auto;
+      min-width: 120px;
+      padding: 10px 15px;
+    }
+
+    /* Screen Settings Panel */
+    #screenSettingsPanel {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background-color: rgba(0,0,0,0.7);
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+      z-index: 1000;
+      font-family: 'Roboto', Arial, sans-serif;
+    }
+
+    #screenSettingsPanel label {
+      display: block;
+      margin: 5px 0;
+      color: white;
+    }
+
+    #screenSettingsPanel input {
+      width: 60px;
+      padding: 5px;
+      margin-left: 5px;
+    }
+
+    #screenSettingsPanel button {
+      width: 100%;
+      margin-top: 10px;
+    }
+
+    /* Responsive Design */
+    @media (max-width: 768px) {
+      body {
+        padding: 10px;
+      }
+
+      header {
+        font-size: 22px;
+        padding: 15px;
+      }
+
+      .card {
+        padding: 20px;
+      }
+
+      select, input, button {
+        font-size: 14px;
+        padding: 10px;
+      }
+
+      h2 {
+        font-size: 18px;
+      }
+
+      #canvas {
+        height: 200px;
+        margin-top: 10px;
+      }
+
+      .control-buttons button {
+        width: 45%;
+      }
+
+      .video-container {
+        width: 100%;
+        height: auto;
+      }
+    }
+
+    @media (max-width: 480px) {
+      header {
+        font-size: 18px;
+      }
+
+      .card {
+        padding: 15px;
+      }
+
+      select, input, button {
+        font-size: 12px;
+        padding: 8px;
+      }
+
+      h2 {
+        font-size: 16px;
+      }
+
+      #canvas {
+        height: 150px;
+      }
+
+      li {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      li label {
+        margin-bottom: 5px;
+        font-size: 14px;
+      }
+
+      li .delete-task {
+        align-self: flex-end;
+        margin-top: 5px;
+      }
+    }
+  </style>
 </head>
-
 <body>
-    <!-- Header section -->
-    <header>
-        <!-- Navigation container with NotNotion title and description -->
-        <div class="nav1">
-            <h1>
-                <!-- Centered NotNotion title -->
-                <center>NotNotion</center>
-            </h1>
-            <h3>
-                <!-- Centered description -->
-                <center>Manage and search your pending task in clicks</center>
-            </h3>
-        </div>
-    </header>
-
-    <!-- Main content container -->
-    <div class="mainframe">
-        <!-- Search form with input and clear button -->
-        <form class="search" id="form_id">
-            <div class="searchbar">
-                <!-- Input field for searching tasks -->
-                <input
-                    type="text"
-                    name="task"
-                    placeholder="search task"
-                    class="searchbox"
-                    id="resetsearch"
-                />
-            </div>
-            <div class="clear">
-                <!-- Clear button with remove icon -->
-                <i class="fa fa-remove red-color fa-2x resets"></i>
-            </div>
-        </form>
-
-        <!-- Task list container -->
-        <div class="tasklist">
-            <!-- Unordered list to display tasks -->
-            <ul class="listitem"></ul>
-
-            <!-- Form for adding new items to the task list -->
-            <form id="additems">
-                <!-- Input field for adding new items -->
-                <input
-                    type="text"
-                    placeholder="add items"
-                    id="filledtext"
-                    name="field1"
-                />
-                <!-- Submit button to add items -->
-                <input type="submit" value="Add" id="submit" />
-            </form>
-        </div>
-
-        <!-- Container for clearing tasks -->
-        <div class="taskclear"></div>
+  <header>
+    Pomodaro
+  </header>
+  <main>
+    <!-- Timer Settings -->
+    <div class="card">
+      <h2>Timer Settings</h2>
+      <label for="focusTime">Focus Time (minutes):</label>
+      <select id="focusTime">
+        <option value="25">25</option>
+        <option value="30">30</option>
+        <option value="40">40</option>
+      </select>
+      <label for="shortBreak">Short Break (minutes):</label>
+      <select id="shortBreak">
+        <option value="5">5</option>
+        <option value="10">10</option>
+      </select>
+      <label for="longBreak">Long Break (minutes):</label>
+      <select id="longBreak">
+        <option value="15">15</option>
+        <option value="20">20</option>
+      </select>
     </div>
+  
+    <!-- Task List -->
+    <div class="card">
+      <h2>Task List</h2>
+      <input type="text" id="taskInput" placeholder="Add a new task">
+      <button id="addTask">Add Task</button>
+      <ul id="taskList"></ul>
+    </div>
+  
+    <!-- Timer Overlay Section -->
+    <div class="video-container">
+      <canvas id="canvas"></canvas>
+    </div>
+      
+    <!-- Control Buttons -->
+    <div class="control-buttons">
+      <button id="startRecording">Start Recording</button>
+      <button id="stopRecording" disabled>Stop Recording</button>
+      <button id="pauseTimer">Pause Timer</button>
+      <button id="shareScreen">Share Screen</button>
+      <button id="stopScreenShare" disabled>Stop Screen Share</button>
+    </div>
+  </main>
 
-    <!-- Inline script (you can add your JavaScript code here) -->
-    <script>
-        // Your JavaScript code goes here
-    </script>
+  <script>
+    // Select Elements
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const startRecordingButton = document.getElementById('startRecording');
+    const stopRecordingButton = document.getElementById('stopRecording');
+    const focusTimeSelect = document.getElementById('focusTime');
+    const shortBreakSelect = document.getElementById('shortBreak');
+    const longBreakSelect = document.getElementById('longBreak');
+    const taskInput = document.getElementById('taskInput');
+    const taskList = document.getElementById('taskList');
+    const addTaskButton = document.getElementById('addTask');
+    const pauseTimerButton = document.getElementById('pauseTimer');
+    const shareScreenButton = document.getElementById('shareScreen');
+    const stopScreenShareButton = document.getElementById('stopScreenShare');
+
+    // Create video elements for webcam and screen sharing
+    const webcamVideo = document.createElement('video');
+    let screenVideo = document.createElement('video');
+
+    // Variables
+    let videoStream;
+    let screenStream;
+    let mediaRecorder;
+    let recordedChunks = [];
+    let timerInterval;
+    let timeRemaining;
+    let tasks = [];
+    let recording = false;
+    let isTimerPaused = false;
+    let isScreenSharing = false;
+    let timerState = 'Focus'; // 'Focus', 'ShortBreak', 'LongBreak'
+    
+    // Screen sharing settings
+    let screenPosition = { x: canvas.width - 200, y: 70 };
+    let screenSize = { width: 180, height: 120 };
+
+    // Initialize Canvas
+    canvas.width = 640;
+    canvas.height = 480;
+
+    // Initialize Video Stream
+    async function initializeVideo() {
+      try {
+        videoStream = await navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            width: { ideal: canvas.width },
+            height: { ideal: canvas.height }
+          } 
+        });
+        webcamVideo.srcObject = videoStream;
+        webcamVideo.play();
+        drawFrame();
+      } catch (error) {
+        console.error('Error accessing video stream:', error);
+        // Fallback: Show message if camera access fails
+        ctx.fillStyle = 'black';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = 'white';
+        ctx.font = '20px Arial';
+        ctx.fillText('Camera access denied or not available', 50, canvas.height/2);
+        // Start drawing anyway (without video)
+        drawFrame();
+      }
+    }
+
+    // Main Drawing Function
+    function drawFrame() {
+      // Clear canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Draw webcam video if available
+      if (videoStream && webcamVideo.readyState >= webcamVideo.HAVE_ENOUGH_DATA) {
+        try {
+          ctx.drawImage(webcamVideo, 0, 0, canvas.width, canvas.height);
+        } catch (e) {
+          console.error('Error drawing video:', e);
+        }
+      }
+      
+      // Draw screen share if active
+      if (isScreenSharing && screenStream && screenVideo.readyState >= screenVideo.HAVE_ENOUGH_DATA) {
+        try {
+          ctx.drawImage(
+            screenVideo, 
+            screenPosition.x, 
+            screenPosition.y, 
+            screenSize.width, 
+            screenSize.height
+          );
+          
+          // Add border to screen share
+          ctx.strokeStyle = 'red';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(
+            screenPosition.x, 
+            screenPosition.y, 
+            screenSize.width, 
+            screenSize.height
+          );
+        } catch (e) {
+          console.log('Error drawing screen share:', e);
+        }
+      }
+      
+      // Draw overlays
+      drawTimerOverlay();
+      drawTaskOverlay();
+      drawProgressCircle();
+      drawTaskProgressCircle();
+      drawRecordingIndicator();
+      
+      requestAnimationFrame(drawFrame);
+    }
+
+    // Timer Functions
+    function startTimer(duration, state) {
+      timerState = state;
+      timeRemaining = duration * 60;
+      updateTimerDisplay();
+      
+      clearInterval(timerInterval);
+      timerInterval = setInterval(updateTimer, 1000);
+    }
+
+    function updateTimer() {
+      if (!recording || isTimerPaused) return;
+
+      timeRemaining--;
+      updateTimerDisplay();
+      
+      if (timeRemaining <= 0) {
+        clearInterval(timerInterval);
+        handleTimerEnd(timerState);
+      }
+    }
+
+    function updateTimerDisplay() {
+      // This will be handled by drawTimerOverlay()
+    }
+
+    function handleTimerEnd(state) {
+      if (state === 'Focus') {
+        alert('Time for a short break!');
+        startTimer(parseInt(shortBreakSelect.value || 5, 10), 'ShortBreak');
+      } else if (state === 'ShortBreak') {
+        alert('Back to focus time!');
+        startTimer(parseInt(focusTimeSelect.value || 25, 10), 'Focus');
+      } else if (state === 'LongBreak') {
+        alert('Long break over! Get back to work!');
+        startTimer(parseInt(focusTimeSelect.value || 25, 10), 'Focus');
+      }
+    }
+
+    function getFormattedTime() {
+      const minutes = Math.floor(timeRemaining / 60);
+      const seconds = timeRemaining % 60;
+      return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
+
+    // Drawing Functions
+    function drawTimerOverlay() {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fillRect(10, 10, 250, 50);
+      ctx.fillStyle = 'white';
+      ctx.font = '20px Arial';
+      ctx.fillText(`${timerState}: ${getFormattedTime()}`, 20, 40);
+    }
+
+    function drawProgressCircle() {
+      const totalTime = timerState === 'Focus'
+        ? parseInt(focusTimeSelect.value || 25, 10) * 60
+        : timerState === 'ShortBreak'
+        ? parseInt(shortBreakSelect.value || 5, 10) * 60
+        : parseInt(longBreakSelect.value || 15, 10) * 60;
+
+      const progress = totalTime ? (totalTime - timeRemaining) / totalTime : 0;
+
+      const centerX = canvas.width - 100;
+      const centerY = canvas.height - 100;
+      const radius = 40;
+
+      // Background Circle
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fill();
+
+      // Progress Circle
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, -Math.PI / 2, -Math.PI / 2 + (2 * Math.PI * progress));
+      ctx.lineWidth = 8;
+      ctx.strokeStyle = 'green';
+      ctx.stroke();
+
+      // Percentage Text
+      ctx.fillStyle = 'white';
+      ctx.font = '16px Arial';
+      ctx.fillText(`${Math.round(progress * 100)}%`, centerX - 20, centerY + 5);
+    }
+
+    function drawTaskProgressCircle() {
+      const completedTasks = tasks.filter(task => task.completed).length;
+      const totalTasks = tasks.length;
+      const progress = totalTasks > 0 ? completedTasks / totalTasks : 0;
+
+      const centerX = 100;
+      const centerY = canvas.height - 100;
+      const radius = 40;
+
+      // Background Circle
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fill();
+
+      // Progress Circle
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, -Math.PI / 2, -Math.PI / 2 + (2 * Math.PI * progress));
+      ctx.lineWidth = 8;
+      ctx.strokeStyle = 'blue';
+      ctx.stroke();
+
+      // Percentage Text
+      ctx.fillStyle = 'white';
+      ctx.font = '16px Arial';
+      ctx.fillText(`${Math.round(progress * 100)}%`, centerX - 20, centerY + 5);
+    }
+
+    function drawTaskOverlay() {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fillRect(10, 70, 300, 200);
+      ctx.fillStyle = 'white';
+      ctx.font = '16px Arial';
+
+      tasks.forEach((task, index) => {
+        const status = task.completed ? '✔' : '❌';
+        ctx.fillText(`${index + 1}. ${task.text} (${status})`, 20, 100 + index * 20);
+      });
+    }
+
+    function drawRecordingIndicator() {
+      if (recording) {
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
+        ctx.fillRect(canvas.width - 120, 10, 110, 50);
+        ctx.fillStyle = 'white';
+        ctx.font = '16px Arial';
+        ctx.fillText('Recording', canvas.width - 110, 40);
+      }
+    }
+
+    // Task Functions
+    addTaskButton.addEventListener('click', () => {
+      const taskText = taskInput.value.trim();
+      if (taskText) {
+        tasks.push({ text: taskText, completed: false });
+        renderTaskList();
+        taskInput.value = '';
+      }
+    });
+
+    function renderTaskList() {
+      taskList.innerHTML = '';
+      tasks.forEach((task, index) => {
+        const li = document.createElement('li');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = `task-${index}`;
+        checkbox.checked = task.completed;
+        checkbox.addEventListener('change', () => {
+          tasks[index].completed = checkbox.checked;
+        });
+
+        const label = document.createElement('label');
+        label.htmlFor = `task-${index}`;
+        label.textContent = task.text;
+
+        const deleteButton = document.createElement('button');
+        deleteButton.className = 'delete-task';
+        deleteButton.textContent = 'Delete';
+        deleteButton.addEventListener('click', () => {
+          tasks.splice(index, 1);
+          renderTaskList();
+        });
+
+        li.appendChild(checkbox);
+        li.appendChild(label);
+        li.appendChild(deleteButton);
+        taskList.appendChild(li);
+      });
+    }
+
+    // Recording Functions
+    startRecordingButton.addEventListener('click', () => {
+      const combinedStream = canvas.captureStream();
+      mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          recordedChunks.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'session.webm';
+        document.body.appendChild(a);
+        a.click();
+        URL.revokeObjectURL(url);
+        recordedChunks = [];
+      };
+
+      mediaRecorder.start();
+      recording = true;
+
+      const focusTime = parseInt(focusTimeSelect.value || 25, 10);
+      startTimer(focusTime, 'Focus');
+
+      startRecordingButton.disabled = true;
+      stopRecordingButton.disabled = false;
+    });
+
+    stopRecordingButton.addEventListener('click', () => {
+      mediaRecorder.stop();
+      recording = false;
+      startRecordingButton.disabled = false;
+      stopRecordingButton.disabled = true;
+    });
+
+    // Pause Timer Functionality
+    pauseTimerButton.addEventListener('click', () => {
+      isTimerPaused = !isTimerPaused;
+      pauseTimerButton.textContent = isTimerPaused ? 'Resume Timer' : 'Pause Timer';
+      
+      if (isTimerPaused) {
+        clearInterval(timerInterval);
+      } else if (recording) {
+        timerInterval = setInterval(updateTimer, 1000);
+      }
+    });
+
+    // Screen Sharing Functions
+    shareScreenButton.addEventListener('click', async () => {
+      try {
+        screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          },
+          audio: false
+        });
+        
+        // Create new video element for screen sharing
+        screenVideo = document.createElement('video');
+        screenVideo.srcObject = screenStream;
+        screenVideo.play();
+        
+        isScreenSharing = true;
+        shareScreenButton.disabled = true;
+        stopScreenShareButton.disabled = false;
+        
+        createScreenSettingsPanel();
+        
+      } catch (error) {
+        console.error('Error sharing screen:', error);
+      }
+    });
+
+    stopScreenShareButton.addEventListener('click', () => {
+      if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop());
+        screenStream = null;
+      }
+      isScreenSharing = false;
+      shareScreenButton.disabled = false;
+      stopScreenShareButton.disabled = true;
+      
+      const panel = document.getElementById('screenSettingsPanel');
+      if (panel) panel.remove();
+    });
+
+    function createScreenSettingsPanel() {
+      const panel = document.createElement('div');
+      panel.id = 'screenSettingsPanel';
+      panel.style.position = 'absolute';
+      panel.style.top = '20px';
+      panel.style.right = '20px';
+      panel.style.backgroundColor = 'rgba(0,0,0,0.7)';
+      panel.style.color = 'white';
+      panel.style.padding = '10px';
+      panel.style.borderRadius = '5px';
+      panel.style.zIndex = '1000';
+      
+      panel.innerHTML = `
+        <h3 style="margin-top:0;">Screen Settings</h3>
+        <label>Width: <input type="number" id="screenWidth" value="${screenSize.width}" min="100" max="400"></label>
+        <label>Height: <input type="number" id="screenHeight" value="${screenSize.height}" min="75" max="300"></label>
+        <label>X Position: <input type="number" id="screenX" value="${screenPosition.x}" min="0" max="${canvas.width}"></label>
+        <label>Y Position: <input type="number" id="screenY" value="${screenPosition.y}" min="0" max="${canvas.height}"></label>
+        <button id="applyScreenSettings">Apply</button>
+      `;
+      
+      document.body.appendChild(panel);
+      
+      document.getElementById('applyScreenSettings').addEventListener('click', () => {
+        screenSize.width = parseInt(document.getElementById('screenWidth').value);
+        screenSize.height = parseInt(document.getElementById('screenHeight').value);
+        screenPosition.x = parseInt(document.getElementById('screenX').value);
+        screenPosition.y = parseInt(document.getElementById('screenY').value);
+      });
+    }
+
+    // Theme Toggle
+    const themeToggle = document.createElement('button');
+    themeToggle.className = 'theme-toggle';
+    themeToggle.textContent = '🌗';
+    document.body.appendChild(themeToggle);
+
+    themeToggle.addEventListener('click', () => {
+      document.body.classList.toggle('dark-theme');
+      document.body.style.background = document.body.classList.contains('dark-theme') ? '#1f2937' : '#f3f4f7';
+    });
+
+    // Full Screen Button
+    const fullScreenButton = document.createElement('button');
+    fullScreenButton.className = 'full-screen-button';
+    fullScreenButton.textContent = 'Full Screen';
+    document.body.appendChild(fullScreenButton);
+    fullScreenButton.addEventListener('click', () => {
+      if (canvas.requestFullscreen) {
+        canvas.requestFullscreen();
+      } else if (canvas.webkitRequestFullscreen) {
+        canvas.webkitRequestFullscreen();
+      } else if (canvas.msRequestFullscreen) {
+        canvas.msRequestFullscreen();
+      }
+    });
+
+    // Initialize the app
+    initializeVideo();
+</script>
 </body>
 </html>
