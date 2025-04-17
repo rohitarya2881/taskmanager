@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Productivity Timer with Breaks</title>
+  <audio id="studySound" src="https://commondatastorage.googleapis.com/codeskulptor-demos/riceracer_assets/music/start.ogg" preload="auto"></audio>
+<audio id="breakSound" src="https://commondatastorage.googleapis.com/codeskulptor-demos/riceracer_assets/music/race1.ogg" preload="auto"></audio>
   <style>
     /* Base Reset */
     * {
@@ -337,6 +339,8 @@
         <option value="15">15</option>
         <option value="20">20</option>
       </select>
+      <label for="soundVolume">Notification Volume:</label>
+<input type="range" id="soundVolume" min="0" max="1" step="0.1" value="0.5">
     </div>
   
     <!-- Task List -->
@@ -377,7 +381,16 @@
     const pauseTimerButton = document.getElementById('pauseTimer');
     const shareScreenButton = document.getElementById('shareScreen');
     const stopScreenShareButton = document.getElementById('stopScreenShare');
-
+// Audio elements
+const studySound = document.getElementById('studySound');
+const breakSound = document.getElementById('breakSound');
+document.getElementById('soundVolume').addEventListener('input', (e) => {
+  studySound.volume = e.target.value;
+  breakSound.volume = e.target.value;
+});
+// Set initial volume (0.5 = 50%)
+studySound.volume = 0.5;
+breakSound.volume = 0.5;
     // Create video elements for webcam and screen sharing
     const webcamVideo = document.createElement('video');
     let screenVideo = document.createElement('video');
@@ -488,7 +501,7 @@
     }
 
     function updateTimer() {
-      if (!recording || isTimerPaused) return;
+      if (isTimerPaused) return;  // Only check for pause state
 
       timeRemaining--;
       updateTimerDisplay();
@@ -504,18 +517,25 @@
     }
 
     function handleTimerEnd(state) {
-      if (state === 'Focus') {
-        alert('Time for a short break!');
-        startTimer(parseInt(shortBreakSelect.value || 5, 10), 'ShortBreak');
-      } else if (state === 'ShortBreak') {
-        alert('Back to focus time!');
-        startTimer(parseInt(focusTimeSelect.value || 25, 10), 'Focus');
-      } else if (state === 'LongBreak') {
-        alert('Long break over! Get back to work!');
-        startTimer(parseInt(focusTimeSelect.value || 25, 10), 'Focus');
-      }
-    }
-
+  if (state === 'Focus') {
+    // Play break sound
+    breakSound.currentTime = 0; // Rewind to start
+    breakSound.play().catch(e => console.log("Audio play failed:", e));
+    alert('Time for a short break!');
+    startTimer(parseInt(shortBreakSelect.value || 5, 10), 'ShortBreak');
+  } else if (state === 'ShortBreak' || state === 'LongBreak') {
+    // Play study sound
+    studySound.currentTime = 0;
+    studySound.play().catch(e => console.log("Audio play failed:", e));
+    const msg = state === 'ShortBreak' ? 'Back to focus time!' : 'Long break over! Get back to work!';
+    alert(msg);
+    startTimer(parseInt(focusTimeSelect.value || 25, 10), 'Focus');
+  }
+}
+document.addEventListener('click', () => {
+  studySound.volume = 0.5;
+  breakSound.volume = 0.5;
+}, { once: true });
     function getFormattedTime() {
       const minutes = Math.floor(timeRemaining / 60);
       const seconds = timeRemaining % 60;
@@ -655,17 +675,18 @@
     }
 
     // Recording Functions
-    startRecordingButton.addEventListener('click', () => {
-      const combinedStream = canvas.captureStream();
-      mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
+// Recording Functions
+startRecordingButton.addEventListener('click', () => {
+    const combinedStream = canvas.captureStream();
+    mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
 
-      mediaRecorder.ondataavailable = (event) => {
+    mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
-          recordedChunks.push(event.data);
+            recordedChunks.push(event.data);
         }
-      };
+    };
 
-      mediaRecorder.onstop = () => {
+    mediaRecorder.onstop = () => {
         const blob = new Blob(recordedChunks, { type: 'video/webm' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -675,36 +696,51 @@
         a.click();
         URL.revokeObjectURL(url);
         recordedChunks = [];
-      };
+    };
 
-      mediaRecorder.start();
-      recording = true;
+    mediaRecorder.start();
+    recording = true;
 
-      const focusTime = parseInt(focusTimeSelect.value || 25, 10);
-      startTimer(focusTime, 'Focus');
+    const focusTime = parseInt(focusTimeSelect.value || 25, 10);
+    startTimer(focusTime, 'Focus');
 
-      startRecordingButton.disabled = true;
-      stopRecordingButton.disabled = false;
-    });
+    startRecordingButton.disabled = true;
+    stopRecordingButton.disabled = false;
+});
 
-    stopRecordingButton.addEventListener('click', () => {
-      mediaRecorder.stop();
-      recording = false;
-      startRecordingButton.disabled = false;
-      stopRecordingButton.disabled = true;
-    });
+stopRecordingButton.addEventListener('click', () => {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+    }
+    recording = false;
+    startRecordingButton.disabled = false;
+    stopRecordingButton.disabled = true;
+});
+    // Pause Timer Functionality
+    
+    // (Previous code remains the same until the pauseTimerButton event listener)
 
     // Pause Timer Functionality
-    pauseTimerButton.addEventListener('click', () => {
-      isTimerPaused = !isTimerPaused;
-      pauseTimerButton.textContent = isTimerPaused ? 'Resume Timer' : 'Pause Timer';
-      
-      if (isTimerPaused) {
+    // Modified Pause Timer Functionality
+pauseTimerButton.addEventListener('click', () => {
+    isTimerPaused = !isTimerPaused;
+    pauseTimerButton.textContent = isTimerPaused ? 'Resume Timer' : 'Pause Timer';
+    
+    if (isTimerPaused) {
         clearInterval(timerInterval);
-      } else if (recording) {
+        if (mediaRecorder && recording) {
+            mediaRecorder.pause(); // Actually pause the recording
+        }
+    } else {
         timerInterval = setInterval(updateTimer, 1000);
-      }
-    });
+        if (mediaRecorder && recording) {
+            mediaRecorder.resume(); // Resume the recording
+        }
+    }
+});
+
+    // (Rest of the code remains the same)
+
 
     // Screen Sharing Functions
     shareScreenButton.addEventListener('click', async () => {
