@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Productivity Timer with Breaks</title>
   <audio id="studySound" src="https://commondatastorage.googleapis.com/codeskulptor-demos/riceracer_assets/music/start.ogg" preload="auto"></audio>
-<audio id="breakSound" src="https://commondatastorage.googleapis.com/codeskulptor-demos/riceracer_assets/music/race1.ogg" preload="auto"></audio>
+  <audio id="breakSound" src="https://commondatastorage.googleapis.com/codeskulptor-demos/riceracer_assets/music/race1.ogg" preload="auto"></audio>
   <style>
     /* Base Reset */
     * {
@@ -237,6 +237,68 @@
       margin-top: 10px;
     }
 
+    /* Routine Styles */
+    .routine-container {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    
+    .routine-day {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .routine-day label {
+      min-width: 100px;
+      margin-bottom: 0;
+    }
+    
+    .routine-tasks {
+      flex-grow: 1;
+    }
+    
+    /* Tabs */
+    .tabs {
+      display: flex;
+      margin-bottom: 15px;
+    }
+    
+    .tab {
+      padding: 10px 20px;
+      cursor: pointer;
+      background: #ddd;
+      border-radius: 5px 5px 0 0;
+      margin-right: 5px;
+    }
+    
+    .tab.active {
+      background: #2563eb;
+      color: white;
+    }
+    
+    .tab-content {
+      display: none;
+    }
+    
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Time Tracking */
+    .time-tracker {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(0, 0, 0, 0.5);
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+      font-family: 'Roboto', Arial, sans-serif;
+      font-size: 14px;
+    }
+
     /* Responsive Design */
     @media (max-width: 768px) {
       body {
@@ -340,15 +402,32 @@
         <option value="20">20</option>
       </select>
       <label for="soundVolume">Notification Volume:</label>
-<input type="range" id="soundVolume" min="0" max="1" step="0.1" value="0.5">
+      <input type="range" id="soundVolume" min="0" max="1" step="0.1" value="0.5">
     </div>
   
-    <!-- Task List -->
+    <!-- Task List with Tabs -->
     <div class="card">
-      <h2>Task List</h2>
-      <input type="text" id="taskInput" placeholder="Add a new task">
-      <button id="addTask">Add Task</button>
-      <ul id="taskList"></ul>
+      <div class="tabs">
+        <div class="tab active" data-tab="tasks">Tasks</div>
+        <div class="tab" data-tab="routine">Daily Routine</div>
+      </div>
+      
+      <!-- Tasks Tab -->
+      <div id="tasks" class="tab-content active">
+        <h2>Task List</h2>
+        <input type="text" id="taskInput" placeholder="Add a new task">
+        <button id="addTask">Add Task</button>
+        <ul id="taskList"></ul>
+      </div>
+      
+      <!-- Routine Tab -->
+      <div id="routine" class="tab-content">
+        <h2>Daily Routine</h2>
+        <div class="routine-container" id="routineContainer">
+          <!-- Days will be added here by JavaScript -->
+        </div>
+        <button id="saveRoutine">Save Routine</button>
+      </div>
     </div>
   
     <!-- Timer Overlay Section -->
@@ -381,16 +460,22 @@
     const pauseTimerButton = document.getElementById('pauseTimer');
     const shareScreenButton = document.getElementById('shareScreen');
     const stopScreenShareButton = document.getElementById('stopScreenShare');
-// Audio elements
-const studySound = document.getElementById('studySound');
-const breakSound = document.getElementById('breakSound');
-document.getElementById('soundVolume').addEventListener('input', (e) => {
-  studySound.volume = e.target.value;
-  breakSound.volume = e.target.value;
-});
-// Set initial volume (0.5 = 50%)
-studySound.volume = 0.5;
-breakSound.volume = 0.5;
+    const routineContainer = document.getElementById('routineContainer');
+    const saveRoutineButton = document.getElementById('saveRoutine');
+    const tabs = document.querySelectorAll('.tab');
+    const tabContents = document.querySelectorAll('.tab-content');
+    
+    // Audio elements
+    const studySound = document.getElementById('studySound');
+    const breakSound = document.getElementById('breakSound');
+    document.getElementById('soundVolume').addEventListener('input', (e) => {
+      studySound.volume = e.target.value;
+      breakSound.volume = e.target.value;
+    });
+    // Set initial volume (0.5 = 50%)
+    studySound.volume = 0.5;
+    breakSound.volume = 0.5;
+    
     // Create video elements for webcam and screen sharing
     const webcamVideo = document.createElement('video');
     let screenVideo = document.createElement('video');
@@ -403,10 +488,24 @@ breakSound.volume = 0.5;
     let timerInterval;
     let timeRemaining;
     let tasks = [];
+    let routineTasks = {
+      monday: [],
+      tuesday: [],
+      wednesday: [],
+      thursday: [],
+      friday: [],
+      saturday: [],
+      sunday: []
+    };
     let recording = false;
     let isTimerPaused = false;
     let isScreenSharing = false;
     let timerState = 'Focus'; // 'Focus', 'ShortBreak', 'LongBreak'
+    
+    // Time Tracking Variables
+    let totalTimeSpent = 0; // in seconds
+    let sessionStartTime = 0;
+    let lastSavedTime = 0;
     
     // Screen sharing settings
     let screenPosition = { x: canvas.width - 200, y: 70 };
@@ -416,7 +515,100 @@ breakSound.volume = 0.5;
     canvas.width = 640;
     canvas.height = 480;
 
-    // Initialize Video Stream
+    // Tab functionality
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        tabs.forEach(t => t.classList.remove('active'));
+        tabContents.forEach(c => c.classList.remove('active'));
+        
+        tab.classList.add('active');
+        const tabId = tab.getAttribute('data-tab');
+        document.getElementById(tabId).classList.add('active');
+      });
+    });
+
+    // Load tasks from local storage
+    function loadTasks() {
+      const savedTasks = localStorage.getItem('tasks');
+      if (savedTasks) {
+        tasks = JSON.parse(savedTasks);
+        renderTaskList();
+      }
+      
+      const savedRoutine = localStorage.getItem('routineTasks');
+      if (savedRoutine) {
+        routineTasks = JSON.parse(savedRoutine);
+        renderRoutine();
+      }
+      
+      // Load total time spent
+      const savedTime = localStorage.getItem('totalTimeSpent');
+      if (savedTime) {
+        totalTimeSpent = parseInt(savedTime, 10);
+      }
+    }
+
+    // Save tasks to local storage
+    function saveTasks() {
+      localStorage.setItem('tasks', JSON.stringify(tasks));
+    }
+
+    // Save routine to local storage
+    function saveRoutine() {
+      localStorage.setItem('routineTasks', JSON.stringify(routineTasks));
+    }
+
+    // Save total time spent
+    function saveTotalTime() {
+      localStorage.setItem('totalTimeSpent', totalTimeSpent.toString());
+    }
+
+    // Load routine tasks for today
+    function loadTodaysRoutine() {
+      const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      const today = new Date().getDay();
+      const todaysDay = days[today];
+      
+      // Check if we've already loaded today's routine
+      const lastRoutineLoad = localStorage.getItem('lastRoutineLoad');
+      const todayDate = new Date().toDateString();
+      
+      if (lastRoutineLoad !== todayDate) {
+        const todaysTasks = routineTasks[todaysDay];
+        if (todaysTasks && todaysTasks.length > 0) {
+          // Add today's routine tasks to the main task list
+          tasks = [...tasks, ...todaysTasks.map(task => ({ text: task, completed: false }))];
+          renderTaskList();
+          saveTasks();
+          // Mark that we've loaded today's routine
+          localStorage.setItem('lastRoutineLoad', todayDate);
+        }
+      }
+    }
+    // Format time for display
+    function formatTime(seconds) {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const secs = seconds % 60;
+      
+      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    // Update time tracking
+    function updateTimeTracking() {
+      if (!isTimerPaused && recording) {
+        totalTimeSpent++;
+        lastSavedTime++;
+        
+        // Save to localStorage every minute (60 seconds)
+        if (lastSavedTime >= 60) {
+          saveTotalTime();
+          lastSavedTime = 0;
+        }
+      }
+    }
+
+    // Initialize Video
     async function initializeVideo() {
       try {
         videoStream = await navigator.mediaDevices.getUserMedia({ 
@@ -486,8 +678,18 @@ breakSound.volume = 0.5;
       drawProgressCircle();
       drawTaskProgressCircle();
       drawRecordingIndicator();
+      drawTimeTracker();
       
       requestAnimationFrame(drawFrame);
+    }
+
+    // Draw time tracker
+    function drawTimeTracker() {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fillRect(10, canvas.height - 40, 200, 30);
+      ctx.fillStyle = 'white';
+      ctx.font = '16px Arial';
+      ctx.fillText(`Total: ${formatTime(totalTimeSpent)}`, 20, canvas.height - 20);
     }
 
     // Timer Functions
@@ -497,7 +699,15 @@ breakSound.volume = 0.5;
       updateTimerDisplay();
       
       clearInterval(timerInterval);
-      timerInterval = setInterval(updateTimer, 1000);
+      timerInterval = setInterval(() => {
+        updateTimer();
+        updateTimeTracking();
+      }, 1000);
+      
+      // Start session time tracking
+      if (!sessionStartTime) {
+        sessionStartTime = Date.now();
+      }
     }
 
     function updateTimer() {
@@ -517,25 +727,27 @@ breakSound.volume = 0.5;
     }
 
     function handleTimerEnd(state) {
-  if (state === 'Focus') {
-    // Play break sound
-    breakSound.currentTime = 0; // Rewind to start
-    breakSound.play().catch(e => console.log("Audio play failed:", e));
-    alert('Time for a short break!');
-    startTimer(parseInt(shortBreakSelect.value || 5, 10), 'ShortBreak');
-  } else if (state === 'ShortBreak' || state === 'LongBreak') {
-    // Play study sound
-    studySound.currentTime = 0;
-    studySound.play().catch(e => console.log("Audio play failed:", e));
-    const msg = state === 'ShortBreak' ? 'Back to focus time!' : 'Long break over! Get back to work!';
-    alert(msg);
-    startTimer(parseInt(focusTimeSelect.value || 25, 10), 'Focus');
-  }
-}
-document.addEventListener('click', () => {
-  studySound.volume = 0.5;
-  breakSound.volume = 0.5;
-}, { once: true });
+      if (state === 'Focus') {
+        // Play break sound
+        breakSound.currentTime = 0; // Rewind to start
+        breakSound.play().catch(e => console.log("Audio play failed:", e));
+        alert('Time for a short break!');
+        startTimer(parseInt(shortBreakSelect.value || 5, 10), 'ShortBreak');
+      } else if (state === 'ShortBreak' || state === 'LongBreak') {
+        // Play study sound
+        studySound.currentTime = 0;
+        studySound.play().catch(e => console.log("Audio play failed:", e));
+        const msg = state === 'ShortBreak' ? 'Back to focus time!' : 'Long break over! Get back to work!';
+        alert(msg);
+        startTimer(parseInt(focusTimeSelect.value || 25, 10), 'Focus');
+      }
+    }
+    
+    document.addEventListener('click', () => {
+      studySound.volume = 0.5;
+      breakSound.volume = 0.5;
+    }, { once: true });
+    
     function getFormattedTime() {
       const minutes = Math.floor(timeRemaining / 60);
       const seconds = timeRemaining % 60;
@@ -639,6 +851,7 @@ document.addEventListener('click', () => {
       if (taskText) {
         tasks.push({ text: taskText, completed: false });
         renderTaskList();
+        saveTasks();
         taskInput.value = '';
       }
     });
@@ -653,6 +866,7 @@ document.addEventListener('click', () => {
         checkbox.checked = task.completed;
         checkbox.addEventListener('change', () => {
           tasks[index].completed = checkbox.checked;
+          saveTasks();
         });
 
         const label = document.createElement('label');
@@ -665,6 +879,7 @@ document.addEventListener('click', () => {
         deleteButton.addEventListener('click', () => {
           tasks.splice(index, 1);
           renderTaskList();
+          saveTasks();
         });
 
         li.appendChild(checkbox);
@@ -674,19 +889,64 @@ document.addEventListener('click', () => {
       });
     }
 
+    // Routine Functions
+    function renderRoutine() {
+      routineContainer.innerHTML = '';
+      
+      const days = [
+        { id: 'monday', name: 'Monday' },
+        { id: 'tuesday', name: 'Tuesday' },
+        { id: 'wednesday', name: 'Wednesday' },
+        { id: 'thursday', name: 'Thursday' },
+        { id: 'friday', name: 'Friday' },
+        { id: 'saturday', name: 'Saturday' },
+        { id: 'sunday', name: 'Sunday' }
+      ];
+      
+      days.forEach(day => {
+        const dayContainer = document.createElement('div');
+        dayContainer.className = 'routine-day';
+        
+        const label = document.createElement('label');
+        label.textContent = day.name;
+        
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'routine-tasks';
+        input.placeholder = 'Enter tasks separated by commas';
+        input.value = routineTasks[day.id].join(', ');
+        
+        dayContainer.appendChild(label);
+        dayContainer.appendChild(input);
+        routineContainer.appendChild(dayContainer);
+      });
+    }
+    
+    saveRoutineButton.addEventListener('click', () => {
+      const inputs = document.querySelectorAll('.routine-tasks');
+      
+      inputs.forEach(input => {
+        const dayId = input.previousElementSibling.textContent.toLowerCase();
+        const tasks = input.value.split(',').map(task => task.trim()).filter(task => task);
+        routineTasks[dayId] = tasks;
+      });
+      
+      saveRoutine();
+      alert('Routine saved!');
+    });
+
     // Recording Functions
-// Recording Functions
-startRecordingButton.addEventListener('click', () => {
-    const combinedStream = canvas.captureStream();
-    mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
+    startRecordingButton.addEventListener('click', () => {
+      const combinedStream = canvas.captureStream();
+      mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
 
-    mediaRecorder.ondataavailable = (event) => {
+      mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
-            recordedChunks.push(event.data);
+          recordedChunks.push(event.data);
         }
-    };
+      };
 
-    mediaRecorder.onstop = () => {
+      mediaRecorder.onstop = () => {
         const blob = new Blob(recordedChunks, { type: 'video/webm' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -696,51 +956,51 @@ startRecordingButton.addEventListener('click', () => {
         a.click();
         URL.revokeObjectURL(url);
         recordedChunks = [];
-    };
+        
+        // Save total time when recording stops
+        saveTotalTime();
+      };
 
-    mediaRecorder.start();
-    recording = true;
+      mediaRecorder.start();
+      recording = true;
+      sessionStartTime = Date.now();
 
-    const focusTime = parseInt(focusTimeSelect.value || 25, 10);
-    startTimer(focusTime, 'Focus');
+      const focusTime = parseInt(focusTimeSelect.value || 25, 10);
+      startTimer(focusTime, 'Focus');
 
-    startRecordingButton.disabled = true;
-    stopRecordingButton.disabled = false;
-});
+      startRecordingButton.disabled = true;
+      stopRecordingButton.disabled = false;
+    });
 
-stopRecordingButton.addEventListener('click', () => {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    stopRecordingButton.addEventListener('click', () => {
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
         mediaRecorder.stop();
-    }
-    recording = false;
-    startRecordingButton.disabled = false;
-    stopRecordingButton.disabled = true;
-});
-    // Pause Timer Functionality
-    
-    // (Previous code remains the same until the pauseTimerButton event listener)
+      }
+      recording = false;
+      startRecordingButton.disabled = false;
+      stopRecordingButton.disabled = true;
+    });
 
     // Pause Timer Functionality
-    // Modified Pause Timer Functionality
-pauseTimerButton.addEventListener('click', () => {
-    isTimerPaused = !isTimerPaused;
-    pauseTimerButton.textContent = isTimerPaused ? 'Resume Timer' : 'Pause Timer';
-    
-    if (isTimerPaused) {
+    pauseTimerButton.addEventListener('click', () => {
+      isTimerPaused = !isTimerPaused;
+      pauseTimerButton.textContent = isTimerPaused ? 'Resume Timer' : 'Pause Timer';
+      
+      if (isTimerPaused) {
         clearInterval(timerInterval);
         if (mediaRecorder && recording) {
-            mediaRecorder.pause(); // Actually pause the recording
+          mediaRecorder.pause(); // Actually pause the recording
         }
-    } else {
-        timerInterval = setInterval(updateTimer, 1000);
+      } else {
+        timerInterval = setInterval(() => {
+          updateTimer();
+          updateTimeTracking();
+        }, 1000);
         if (mediaRecorder && recording) {
-            mediaRecorder.resume(); // Resume the recording
+          mediaRecorder.resume(); // Resume the recording
         }
-    }
-});
-
-    // (Rest of the code remains the same)
-
+      }
+    });
 
     // Screen Sharing Functions
     shareScreenButton.addEventListener('click', async () => {
@@ -841,6 +1101,12 @@ pauseTimerButton.addEventListener('click', () => {
 
     // Initialize the app
     initializeVideo();
-</script>
+    loadTasks();
+    renderRoutine();
+    loadTodaysRoutine();
+    
+    // Start time tracking interval (runs every second)
+    setInterval(updateTimeTracking, 1000);
+  </script>
 </body>
 </html>
