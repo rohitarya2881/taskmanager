@@ -445,11 +445,13 @@
     </div>
   </main>
 
-  <script>
+<script>
     // Select Elements
-    let db;
+    // IndexedDB variables
+let db;
 const DB_NAME = 'PomodoroRecorderDB';
 const STORE_NAME = 'videoChunks';
+const SESSION_KEY = 'currentRecordingSession';
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const startRecordingButton = document.getElementById('startRecording');
@@ -467,12 +469,14 @@ const STORE_NAME = 'videoChunks';
     const saveRoutineButton = document.getElementById('saveRoutine');
     const tabs = document.querySelectorAll('.tab');
     const tabContents = document.querySelectorAll('.tab-content');
-    function initDB() {
+
+async function initDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);
     
     request.onerror = (event) => {
       console.error("Database error:", event.target.error);
+      alert("Failed to initialize database. Some features may not work.");
       reject(event.target.error);
     };
     
@@ -483,10 +487,19 @@ const STORE_NAME = 'videoChunks';
     
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
-      db.createObjectStore(STORE_NAME, { autoIncrement: true });
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { autoIncrement: true });
+      }
+    };
+    
+    request.onblocked = (event) => {
+      console.error("Database blocked:", event);
+      alert("Database is blocked. Please close other tabs using this app.");
+      reject(new Error("Database blocked"));
     };
   });
 }
+
     // Audio elements
     const studySound = document.getElementById('studySound');
     const breakSound = document.getElementById('breakSound');
@@ -549,6 +562,23 @@ const STORE_NAME = 'videoChunks';
       });
     });
 
+async function checkStorageQuota() {
+  if (navigator.storage && navigator.storage.estimate) {
+    try {
+      const quota = await navigator.storage.estimate();
+      console.log(`Storage quota: ${quota.quota}, usage: ${quota.usage}`);
+      if (quota.usage / quota.quota > 0.9) {
+        alert("Warning: Storage space is almost full. Some features may not work properly.");
+      }
+    } catch (error) {
+      console.error("Storage quota check failed:", error);
+    }
+  }
+}
+
+// Call this periodically during recording
+setInterval(checkStorageQuota, 300000); // Every 5 minutes
+
     // Load tasks from local storage
     function loadTasks() {
       const savedTasks = localStorage.getItem('tasks');
@@ -607,6 +637,7 @@ const STORE_NAME = 'videoChunks';
         }
       }
     }
+
     // Format time for display
     function formatTime(seconds) {
       const hours = Math.floor(seconds / 3600);
@@ -631,33 +662,36 @@ const STORE_NAME = 'videoChunks';
     }
 
     // Initialize Video
-    async function initializeVideo() {
-      try {
-        videoStream = await navigator.mediaDevices.getUserMedia({ 
-          video: { 
-            width: { ideal: canvas.width },
-            height: { ideal: canvas.height }
-          } 
-        });
-        webcamVideo.srcObject = videoStream;
-        webcamVideo.play();
-        drawFrame();
-        // Request notification permission on page load
-if (Notification.permission !== "granted") {
-  Notification.requestPermission();
-}
-      } catch (error) {
-        console.error('Error accessing video stream:', error);
-        // Fallback: Show message if camera access fails
-        ctx.fillStyle = 'black';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = 'white';
-        ctx.font = '20px Arial';
-        ctx.fillText('Camera access denied or not available', 50, canvas.height/2);
-        // Start drawing anyway (without video)
-        drawFrame();
-      }
+ async function initializeVideo() {
+  try {
+    await initDB(); // Initialize DB first
+    
+    videoStream = await navigator.mediaDevices.getUserMedia({ 
+      video: { 
+        width: { ideal: canvas.width },
+        height: { ideal: canvas.height }
+      } 
+    });
+    webcamVideo.srcObject = videoStream;
+    webcamVideo.play();
+    drawFrame();
+    
+    // Request notification permission on page load
+    if (Notification.permission !== "granted") {
+      Notification.requestPermission();
     }
+  } catch (error) {
+    console.error('Error accessing video stream:', error);
+    // Fallback: Show message if camera access fails
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'white';
+    ctx.font = '20px Arial';
+    ctx.fillText('Camera access denied or not available', 50, canvas.height/2);
+    // Start drawing anyway (without video)
+    drawFrame();
+  }
+}
 
     // Main Drawing Function
     function drawFrame() {
@@ -1003,60 +1037,57 @@ function showAlert(state) {
     });
 
     // Recording Functions
-   startRecordingButton.addEventListener('click', async () => {
-  // Load any existing chunks from previous session
-  const previousChunks = await loadChunksFromDB();
-  recordedChunks = previousChunks;
-  
-  const combinedStream = canvas.captureStream();
-  mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
+startRecordingButton.addEventListener('click', async () => {
+  try {
+    // Initialize DB if not already done
+    if (!db) await initDB();
+    
+    // Load any existing chunks from previous session
+    const previousChunks = await loadChunksFromDB();
+    recordedChunks = previousChunks;
+    
+    const combinedStream = canvas.captureStream();
+    mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
 
-  mediaRecorder.ondataavailable = (event) => {
-    if (event.data.size > 0) {
-      recordedChunks.push(event.data);
-    }
-  };
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        recordedChunks.push(event.data);
+        // Periodically save chunks to DB
+        if (recordedChunks.length % 5 === 0) { // Save every 5 chunks
+          saveChunksToDB(recordedChunks);
+        }
+      }
+    };
 
-  mediaRecorder.onstop = async () => {
-    await finalizeRecording();
-  };
+    mediaRecorder.onstop = async () => {
+      await finalizeRecording();
+    };
 
-  mediaRecorder.start(1000); // Collect data every second
-  recording = true;
-  sessionStartTime = Date.now();
-
-  const focusTime = parseInt(focusTimeSelect.value || 25, 10);
-  startTimer(focusTime, 'Focus');
-
-  startRecordingButton.disabled = true;
-  stopRecordingButton.disabled = false;
-});
-
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(recordedChunks, { type: 'video/webm' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'session.webm';
-        document.body.appendChild(a);
-        a.click();
-        URL.revokeObjectURL(url);
-        recordedChunks = [];
-        
-        // Save total time when recording stops
-        saveTotalTime();
-      };
-
-      mediaRecorder.start();
-      recording = true;
+    mediaRecorder.start(1000); // Collect data every second
+    recording = true;
+    
+    // Check if we're resuming a session
+    const savedSession = loadRecordingSession();
+    if (savedSession) {
+      timerState = savedSession.timerState;
+      timeRemaining = savedSession.timeRemaining;
+      sessionStartTime = savedSession.sessionStartTime;
+      totalTimeSpent = savedSession.totalTimeSpent;
+      startTimer(Math.ceil(timeRemaining / 60), timerState);
+    } else {
       sessionStartTime = Date.now();
-
       const focusTime = parseInt(focusTimeSelect.value || 25, 10);
       startTimer(focusTime, 'Focus');
-
-      startRecordingButton.disabled = true;
-      stopRecordingButton.disabled = false;
-    });
+    }
+    
+    saveRecordingSession();
+    startRecordingButton.disabled = true;
+    stopRecordingButton.disabled = false;
+  } catch (error) {
+    console.error("Error starting recording:", error);
+    alert("Failed to start recording. Please try again.");
+  }
+});
 
 stopRecordingButton.addEventListener('click', async () => {
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {
@@ -1068,8 +1099,9 @@ stopRecordingButton.addEventListener('click', async () => {
   
   // Save chunks to IndexedDB before finalizing
   await saveChunksToDB(recordedChunks);
-  finalizeRecording();
+  clearRecordingSession();
 });
+
     // Pause Timer Functionality
     pauseTimerButton.addEventListener('click', () => {
       isTimerPaused = !isTimerPaused;
@@ -1188,16 +1220,7 @@ stopRecordingButton.addEventListener('click', async () => {
       }
     });
 
-    // Initialize the app
-    initializeVideo();
-    loadTasks();
-    renderRoutine();
-    loadTodaysRoutine();
-    
-    // Start time tracking interval (runs every second)
-    setInterval(updateTimeTracking, 1000);
-
-    async function saveChunksToDB(chunks) {
+async function saveChunksToDB(chunks) {
   return new Promise((resolve, reject) => {
     const transaction = db.transaction([STORE_NAME], 'readwrite');
     const store = transaction.objectStore(STORE_NAME);
@@ -1229,29 +1252,56 @@ async function loadChunksFromDB() {
     request.onerror = (event) => reject(event.target.error);
   });
 }
-    async function finalizeRecording() {
-  const blob = new Blob(recordedChunks, { type: 'video/webm' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `pomodoro-session-${new Date().toISOString().split('T')[0]}.webm`;
-  document.body.appendChild(a);
-  a.click();
-  
-  setTimeout(() => {
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, 100);
-  
-  // Clear stored chunks after export
-  const transaction = db.transaction([STORE_NAME], 'readwrite');
-  const store = transaction.objectStore(STORE_NAME);
-  store.clear();
-  
-  recordedChunks = [];
-  saveTotalTime();
+
+function saveRecordingSession() {
+  localStorage.setItem(SESSION_KEY, JSON.stringify({
+    recording: true,
+    timerState,
+    timeRemaining,
+    sessionStartTime,
+    totalTimeSpent
+  }));
 }
-    // Save chunks when page is about to unload
+
+function loadRecordingSession() {
+  const session = localStorage.getItem(SESSION_KEY);
+  return session ? JSON.parse(session) : null;
+}
+
+function clearRecordingSession() {
+  localStorage.removeItem(SESSION_KEY);
+}
+
+async function finalizeRecording() {
+  try {
+    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pomodoro-session-${new Date().toISOString().split('T')[0]}.webm`;
+    document.body.appendChild(a);
+    a.click();
+    
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 100);
+    
+    // Clear stored chunks after export
+    const transaction = db.transaction([STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    store.clear();
+    
+    recordedChunks = [];
+    saveTotalTime();
+    clearRecordingSession();
+  } catch (error) {
+    console.error("Error finalizing recording:", error);
+    alert("Failed to save recording. Please try again.");
+  }
+}
+
+// Save chunks when page is about to unload
 window.addEventListener('beforeunload', async (event) => {
   if (recording && mediaRecorder && mediaRecorder.state !== 'inactive') {
     // Request final chunk
@@ -1260,8 +1310,9 @@ window.addEventListener('beforeunload', async (event) => {
     // Small delay to ensure data is available
     await new Promise(resolve => setTimeout(resolve, 100));
     
-    // Save chunks to DB
+    // Save chunks to DB and session state
     await saveChunksToDB(recordedChunks);
+    saveRecordingSession();
   }
 });
 
@@ -1272,7 +1323,29 @@ window.addEventListener('load', async () => {
   loadTasks();
   renderRoutine();
   loadTodaysRoutine();
+  
+  // Check for existing recording session
+  const savedSession = loadRecordingSession();
+  if (savedSession && savedSession.recording) {
+    if (confirm("You have an unfinished recording session. Would you like to resume?")) {
+      startRecordingButton.click();
+    } else {
+      clearRecordingSession();
+      const transaction = db.transaction([STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      store.clear();
+    }
+  }
 });
+
+    // Initialize the app
+    initializeVideo();
+    loadTasks();
+    renderRoutine();
+    loadTodaysRoutine();
+    
+    // Start time tracking interval (runs every second)
+    setInterval(updateTimeTracking, 1000);
   </script>
 </body>
 </html>
