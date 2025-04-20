@@ -447,6 +447,9 @@
 
   <script>
     // Select Elements
+    let db;
+const DB_NAME = 'PomodoroRecorderDB';
+const STORE_NAME = 'videoChunks';
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const startRecordingButton = document.getElementById('startRecording');
@@ -464,7 +467,26 @@
     const saveRoutineButton = document.getElementById('saveRoutine');
     const tabs = document.querySelectorAll('.tab');
     const tabContents = document.querySelectorAll('.tab-content');
+    function initDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, 1);
     
+    request.onerror = (event) => {
+      console.error("Database error:", event.target.error);
+      reject(event.target.error);
+    };
+    
+    request.onsuccess = (event) => {
+      db = event.target.result;
+      resolve(db);
+    };
+    
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      db.createObjectStore(STORE_NAME, { autoIncrement: true });
+    };
+  });
+}
     // Audio elements
     const studySound = document.getElementById('studySound');
     const breakSound = document.getElementById('breakSound');
@@ -981,15 +1003,34 @@ function showAlert(state) {
     });
 
     // Recording Functions
-    startRecordingButton.addEventListener('click', () => {
-      const combinedStream = canvas.captureStream();
-      mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
+   startRecordingButton.addEventListener('click', async () => {
+  // Load any existing chunks from previous session
+  const previousChunks = await loadChunksFromDB();
+  recordedChunks = previousChunks;
+  
+  const combinedStream = canvas.captureStream();
+  mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
 
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          recordedChunks.push(event.data);
-        }
-      };
+  mediaRecorder.ondataavailable = (event) => {
+    if (event.data.size > 0) {
+      recordedChunks.push(event.data);
+    }
+  };
+
+  mediaRecorder.onstop = async () => {
+    await finalizeRecording();
+  };
+
+  mediaRecorder.start(1000); // Collect data every second
+  recording = true;
+  sessionStartTime = Date.now();
+
+  const focusTime = parseInt(focusTimeSelect.value || 25, 10);
+  startTimer(focusTime, 'Focus');
+
+  startRecordingButton.disabled = true;
+  stopRecordingButton.disabled = false;
+});
 
       mediaRecorder.onstop = () => {
         const blob = new Blob(recordedChunks, { type: 'video/webm' });
@@ -1017,15 +1058,18 @@ function showAlert(state) {
       stopRecordingButton.disabled = false;
     });
 
-    stopRecordingButton.addEventListener('click', () => {
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
-      }
-      recording = false;
-      startRecordingButton.disabled = false;
-      stopRecordingButton.disabled = true;
-    });
-
+stopRecordingButton.addEventListener('click', async () => {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+  }
+  recording = false;
+  startRecordingButton.disabled = false;
+  stopRecordingButton.disabled = true;
+  
+  // Save chunks to IndexedDB before finalizing
+  await saveChunksToDB(recordedChunks);
+  finalizeRecording();
+});
     // Pause Timer Functionality
     pauseTimerButton.addEventListener('click', () => {
       isTimerPaused = !isTimerPaused;
@@ -1152,6 +1196,83 @@ function showAlert(state) {
     
     // Start time tracking interval (runs every second)
     setInterval(updateTimeTracking, 1000);
+
+    async function saveChunksToDB(chunks) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    
+    // Clear old chunks first
+    const clearRequest = store.clear();
+    
+    clearRequest.onsuccess = () => {
+      // Add all chunks
+      chunks.forEach((chunk, index) => {
+        store.put(chunk, index);
+      });
+      
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = (event) => reject(event.target.error);
+    };
+    
+    clearRequest.onerror = (event) => reject(event.target.error);
+  });
+}
+
+async function loadChunksFromDB() {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([STORE_NAME], 'readonly');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.getAll();
+    
+    request.onsuccess = (event) => resolve(event.target.result || []);
+    request.onerror = (event) => reject(event.target.error);
+  });
+}
+    async function finalizeRecording() {
+  const blob = new Blob(recordedChunks, { type: 'video/webm' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `pomodoro-session-${new Date().toISOString().split('T')[0]}.webm`;
+  document.body.appendChild(a);
+  a.click();
+  
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 100);
+  
+  // Clear stored chunks after export
+  const transaction = db.transaction([STORE_NAME], 'readwrite');
+  const store = transaction.objectStore(STORE_NAME);
+  store.clear();
+  
+  recordedChunks = [];
+  saveTotalTime();
+}
+    // Save chunks when page is about to unload
+window.addEventListener('beforeunload', async (event) => {
+  if (recording && mediaRecorder && mediaRecorder.state !== 'inactive') {
+    // Request final chunk
+    mediaRecorder.requestData();
+    
+    // Small delay to ensure data is available
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Save chunks to DB
+    await saveChunksToDB(recordedChunks);
+  }
+});
+
+// Initialize when page loads
+window.addEventListener('load', async () => {
+  await initDB();
+  initializeVideo();
+  loadTasks();
+  renderRoutine();
+  loadTodaysRoutine();
+});
   </script>
 </body>
 </html>
