@@ -544,33 +544,32 @@ function loadInitialData() {
   // Load tasks
   const savedTasks = localStorage.getItem('tasks');
   tasks = savedTasks ? JSON.parse(savedTasks) : [];
-  
+
   // Load routine
   const savedRoutine = localStorage.getItem('routineTasks');
   routineTasks = savedRoutine ? JSON.parse(savedRoutine) : {
     monday: [], tuesday: [], wednesday: [], thursday: [],
     friday: [], saturday: [], sunday: []
   };
-  
+
   // Load daily time data
   const savedTimeData = localStorage.getItem('dailyTimeData');
   dailyTimeData = savedTimeData ? JSON.parse(savedTimeData) : {};
-  
-  // Load daily goal
-  const savedGoal = localStorage.getItem('dailyTimeGoal');
-  dailyTimeGoal = savedGoal ? parseInt(savedGoal, 10) : 8 * 3600;
-  
+
+  // Load lastTimeUpdate
+  const savedLastTimeUpdate = localStorage.getItem('lastTimeUpdate');
+  lastTimeUpdate = savedLastTimeUpdate ? parseInt(savedLastTimeUpdate, 10) : Date.now();
+
   // Initialize current day
   currentDate = new Date().toISOString().split('T')[0];
   if (!dailyTimeData[currentDate]) {
     dailyTimeData[currentDate] = 0;
   }
-  
+
   renderTaskList();
   renderRoutine();
   loadTodaysRoutine();
 }
-
 // Save daily time data
 function saveDailyTime() {
   localStorage.setItem('dailyTimeData', JSON.stringify(dailyTimeData));
@@ -578,7 +577,7 @@ function saveDailyTime() {
 
 // Update time tracking with accurate elapsed time
 function updateTimeTracking() {
-  if (!recording || isTimerPaused) {
+  if (!recording) {
     lastTimeUpdate = Date.now();
     return;
   }
@@ -596,22 +595,25 @@ function updateTimeTracking() {
   // Calculate elapsed time
   const now = Date.now();
   const elapsedSeconds = Math.floor((now - lastTimeUpdate) / 1000);
-  
-  if (elapsedSeconds >= 1) {
+
+  if (elapsedSeconds >= 1 && !isTimerPaused) {
     dailyTimeData[currentDate] += elapsedSeconds;
     lastSavedTime += elapsedSeconds;
     lastTimeUpdate = now;
-    
+    localStorage.setItem('lastTimeUpdate', lastTimeUpdate.toString()); // Save to localStorage
+
     // Check daily goal
     if (dailyTimeData[currentDate] >= dailyTimeGoal) {
       showGoalNotification();
     }
-    
+
     // Save periodically
     if (lastSavedTime >= 60) {
       saveDailyTime();
       lastSavedTime = 0;
     }
+  } else {
+    lastTimeUpdate = now;
   }
 }
 
@@ -1324,12 +1326,10 @@ fullScreenButton.addEventListener('click', () => {
 
 // Save data before unload
 window.addEventListener('beforeunload', async (event) => {
-  if (recording && mediaRecorder && mediaRecorder.state !== 'inactive') {
-    mediaRecorder.requestData();
-    await new Promise(resolve => setTimeout(resolve, 100));
-    await saveChunksToDB(recordedChunks);
-    saveRecordingSession();
+  if (recording) {
+    updateTimeTracking(); // Force update before closing
     saveDailyTime();
+    localStorage.setItem('lastTimeUpdate', lastTimeUpdate.toString());
   }
 });
 
@@ -1339,7 +1339,8 @@ window.addEventListener('load', async () => {
   initializeVideo();
   loadInitialData();
   addGoalControls();
-  
+    setInterval(updateTimeTracking, 1000);
+
   const savedSession = loadRecordingSession();
   if (savedSession && savedSession.recording) {
     if (confirm("Unfinished session found. Resume?")) {
