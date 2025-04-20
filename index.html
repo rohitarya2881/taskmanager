@@ -698,22 +698,21 @@ if (Notification.permission !== "granted") {
 
     // Timer Functions
     function startTimer(duration, state) {
-      timerState = state;
-      timeRemaining = duration * 60;
-      updateTimerDisplay();
-      
-      clearInterval(timerInterval);
-      timerInterval = setInterval(() => {
-        updateTimer();
-        updateTimeTracking();
-      }, 1000);
-      
-      // Start session time tracking
-      if (!sessionStartTime) {
-        sessionStartTime = Date.now();
-      }
-    }
-
+  timerState = state;
+  timeRemaining = duration * 60;
+  updateTimerDisplay();
+  
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    updateTimer();
+    updateTimeTracking(); // Only called from here
+  }, 1000);
+  
+  // Start session time tracking
+  if (!sessionStartTime) {
+    sessionStartTime = Date.now();
+  }
+}
     function updateTimer() {
       if (isTimerPaused) return;  // Only check for pause state
 
@@ -1151,7 +1150,6 @@ function showAlert(state) {
     loadTodaysRoutine();
     
     // Start time tracking interval (runs every second)
-    setInterval(updateTimeTracking, 1000);
   </script>
 </body>
 </html>
