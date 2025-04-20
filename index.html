@@ -511,6 +511,10 @@ let dailyTimeGoal = 8 * 3600; // 8 hours in seconds (default)
 let lastSavedTime = 0;
 let lastTimeUpdate = Date.now();
 
+// Screen sharing settings
+let screenPosition = { x: canvas.width - 200, y: 70 };
+let screenSize = { width: 180, height: 120 };
+
 // Initialize Canvas
 canvas.width = 640;
 canvas.height = 480;
@@ -544,76 +548,79 @@ function loadInitialData() {
   // Load tasks
   const savedTasks = localStorage.getItem('tasks');
   tasks = savedTasks ? JSON.parse(savedTasks) : [];
-
+  
   // Load routine
   const savedRoutine = localStorage.getItem('routineTasks');
   routineTasks = savedRoutine ? JSON.parse(savedRoutine) : {
     monday: [], tuesday: [], wednesday: [], thursday: [],
     friday: [], saturday: [], sunday: []
   };
-
+  
   // Load daily time data
   const savedTimeData = localStorage.getItem('dailyTimeData');
   dailyTimeData = savedTimeData ? JSON.parse(savedTimeData) : {};
-
-  // Load lastTimeUpdate
-  const savedLastTimeUpdate = localStorage.getItem('lastTimeUpdate');
-  lastTimeUpdate = savedLastTimeUpdate ? parseInt(savedLastTimeUpdate, 10) : Date.now();
-
+  
+  // Load daily goal
+  const savedGoal = localStorage.getItem('dailyTimeGoal');
+  if (savedGoal) {
+    dailyTimeGoal = parseInt(savedGoal, 10);
+  } else {
+    dailyTimeGoal = 8 * 3600; // Default to 8 hours if not set
+    localStorage.setItem('dailyTimeGoal', dailyTimeGoal.toString());
+  }
+  
   // Initialize current day
   currentDate = new Date().toISOString().split('T')[0];
   if (!dailyTimeData[currentDate]) {
     dailyTimeData[currentDate] = 0;
   }
-
+  
   renderTaskList();
   renderRoutine();
   loadTodaysRoutine();
 }
+
 // Save daily time data
 function saveDailyTime() {
   localStorage.setItem('dailyTimeData', JSON.stringify(dailyTimeData));
 }
 
-// Update time tracking with accurate elapsed time
+// Update time tracking
 function updateTimeTracking() {
-  if (!recording) {
-    lastTimeUpdate = Date.now();
+  if (!recording || isTimerPaused) {
+    lastTimeUpdate = Date.now(); // Reset when not tracking
     return;
   }
 
   // Check for new day
   const today = new Date().toISOString().split('T')[0];
   if (today !== currentDate) {
-    currentDate = today;
-    if (!dailyTimeData[currentDate]) {
-      dailyTimeData[currentDate] = 0;
-    }
+    // Save previous day's data
     saveDailyTime();
+    // Start new day
+    currentDate = today;
+    dailyTimeData[currentDate] = 0;
   }
 
   // Calculate elapsed time
   const now = Date.now();
   const elapsedSeconds = Math.floor((now - lastTimeUpdate) / 1000);
-
-  if (elapsedSeconds >= 1 && !isTimerPaused) {
+  
+  if (elapsedSeconds >= 1) {
     dailyTimeData[currentDate] += elapsedSeconds;
     lastSavedTime += elapsedSeconds;
     lastTimeUpdate = now;
-    localStorage.setItem('lastTimeUpdate', lastTimeUpdate.toString()); // Save to localStorage
-
+    
     // Check daily goal
     if (dailyTimeData[currentDate] >= dailyTimeGoal) {
       showGoalNotification();
     }
-
+    
     // Save periodically
     if (lastSavedTime >= 60) {
       saveDailyTime();
       lastSavedTime = 0;
     }
-  } else {
-    lastTimeUpdate = now;
   }
 }
 
@@ -635,8 +642,12 @@ function showGoalNotification() {
 
 // Set daily goal
 function setDailyGoal(hours) {
-  dailyTimeGoal = hours * 3600;
-  localStorage.setItem('dailyTimeGoal', dailyTimeGoal.toString());
+  if (hours >= 1 && hours <= 12) {
+    dailyTimeGoal = hours * 3600;
+    localStorage.setItem('dailyTimeGoal', dailyTimeGoal.toString());
+    return true;
+  }
+  return false;
 }
 
 // Format time
@@ -690,11 +701,11 @@ function addGoalControls() {
   
   document.getElementById('setGoal').addEventListener('click', () => {
     const hours = parseInt(document.getElementById('dailyGoalHours').value);
-    if (hours >= 1 && hours <= 12) {
-      setDailyGoal(hours);
+    if (setDailyGoal(hours)) {
       alert(`Daily goal set to ${hours} hours`);
     } else {
       alert('Please enter a value between 1 and 12 hours');
+      document.getElementById('dailyGoalHours').value = dailyTimeGoal / 3600;
     }
   });
 }
@@ -1111,9 +1122,6 @@ stopRecordingButton.addEventListener('click', async () => {
 });
 
 // Screen sharing functions
-let screenPosition = { x: canvas.width - 200, y: 70 };
-let screenSize = { width: 180, height: 120 };
-
 shareScreenButton.addEventListener('click', async () => {
   try {
     screenStream = await navigator.mediaDevices.getDisplayMedia({
@@ -1326,10 +1334,12 @@ fullScreenButton.addEventListener('click', () => {
 
 // Save data before unload
 window.addEventListener('beforeunload', async (event) => {
-  if (recording) {
-    updateTimeTracking(); // Force update before closing
+  if (recording && mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.requestData();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await saveChunksToDB(recordedChunks);
+    saveRecordingSession();
     saveDailyTime();
-    localStorage.setItem('lastTimeUpdate', lastTimeUpdate.toString());
   }
 });
 
@@ -1339,8 +1349,7 @@ window.addEventListener('load', async () => {
   initializeVideo();
   loadInitialData();
   addGoalControls();
-    setInterval(updateTimeTracking, 1000);
-
+  
   const savedSession = loadRecordingSession();
   if (savedSession && savedSession.recording) {
     if (confirm("Unfinished session found. Resume?")) {
@@ -1352,6 +1361,9 @@ window.addEventListener('load', async () => {
       store.clear();
     }
   }
+  
+  // Start the time tracking loop
+  setInterval(updateTimeTracking, 1000);
 });
 </script>
 </body>
