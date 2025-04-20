@@ -620,6 +620,10 @@
         webcamVideo.srcObject = videoStream;
         webcamVideo.play();
         drawFrame();
+        // Request notification permission on page load
+if (Notification.permission !== "granted") {
+  Notification.requestPermission();
+}
       } catch (error) {
         console.error('Error accessing video stream:', error);
         // Fallback: Show message if camera access fails
@@ -726,22 +730,63 @@
       // This will be handled by drawTimerOverlay()
     }
 
-    function handleTimerEnd(state) {
-      if (state === 'Focus') {
-        // Play break sound
-        breakSound.currentTime = 0; // Rewind to start
-        breakSound.play().catch(e => console.log("Audio play failed:", e));
-        alert('Time for a short break!');
-        startTimer(parseInt(shortBreakSelect.value || 5, 10), 'ShortBreak');
-      } else if (state === 'ShortBreak' || state === 'LongBreak') {
-        // Play study sound
-        studySound.currentTime = 0;
-        studySound.play().catch(e => console.log("Audio play failed:", e));
-        const msg = state === 'ShortBreak' ? 'Back to focus time!' : 'Long break over! Get back to work!';
-        alert(msg);
-        startTimer(parseInt(focusTimeSelect.value || 25, 10), 'Focus');
+function handleTimerEnd(state) {
+  // Request notification permission if not already granted
+  if (Notification.permission !== "granted") {
+    Notification.requestPermission().then(permission => {
+      if (permission === "granted") {
+        showNotification(state);
+      } else {
+        // Fallback to alert if notifications not allowed
+        showAlert(state);
       }
-    }
+    });
+  } else {
+    showNotification(state);
+  }
+  
+  // Play appropriate sound
+  if (state === 'Focus') {
+    breakSound.currentTime = 0;
+    breakSound.play().catch(e => console.log("Audio play failed:", e));
+    startTimer(parseInt(shortBreakSelect.value || 5, 10), 'ShortBreak');
+  } else {
+    studySound.currentTime = 0;
+    studySound.play().catch(e => console.log("Audio play failed:", e));
+    startTimer(parseInt(focusTimeSelect.value || 25, 10), 'Focus');
+  }
+}
+
+function showNotification(state) {
+  let title, body;
+  
+  if (state === 'Focus') {
+    title = 'Time for a break!';
+    body = 'Your focus session has ended. Take a short break.';
+  } else if (state === 'ShortBreak') {
+    title = 'Break time over!';
+    body = 'Your short break has ended. Time to focus again.';
+  } else { // LongBreak
+    title = 'Break time over!';
+    body = 'Your long break has ended. Time to get back to work.';
+  }
+  
+  // Show notification
+  new Notification(title, { 
+    body: body,
+    icon: 'https://cdn-icons-png.flaticon.com/512/2913/2913103.png' // Optional icon
+  });
+}
+
+function showAlert(state) {
+  if (state === 'Focus') {
+    alert('Time for a short break!');
+  } else if (state === 'ShortBreak') {
+    alert('Back to focus time!');
+  } else {
+    alert('Long break over! Get back to work!');
+  }
+}
     
     document.addEventListener('click', () => {
       studySound.volume = 0.5;
