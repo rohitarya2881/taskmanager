@@ -585,6 +585,7 @@
         }
       }
     }
+
     // Format time for display
     function formatTime(seconds) {
       const hours = Math.floor(seconds / 3600);
@@ -611,6 +612,10 @@
     // Initialize Video
     async function initializeVideo() {
       try {
+        if (videoStream) {
+          videoStream.getTracks().forEach(track => track.stop());
+        }
+        
         videoStream = await navigator.mediaDevices.getUserMedia({ 
           video: { 
             width: { ideal: canvas.width },
@@ -618,12 +623,13 @@
           } 
         });
         webcamVideo.srcObject = videoStream;
-        webcamVideo.play();
+        await webcamVideo.play();
         drawFrame();
-        // Request notification permission on page load
-if (Notification.permission !== "granted") {
-  Notification.requestPermission();
-}
+        
+        if (Notification.permission !== "granted") {
+          await Notification.requestPermission();
+        }
+        return true;
       } catch (error) {
         console.error('Error accessing video stream:', error);
         // Fallback: Show message if camera access fails
@@ -634,6 +640,7 @@ if (Notification.permission !== "granted") {
         ctx.fillText('Camera access denied or not available', 50, canvas.height/2);
         // Start drawing anyway (without video)
         drawFrame();
+        return false;
       }
     }
 
@@ -698,23 +705,24 @@ if (Notification.permission !== "granted") {
 
     // Timer Functions
     function startTimer(duration, state) {
-  timerState = state;
-  timeRemaining = duration * 60;
-  updateTimerDisplay();
-  
-  clearInterval(timerInterval);
-  timerInterval = setInterval(() => {
-    updateTimer();
-    updateTimeTracking(); // Only called from here
-  }, 1000);
-  
-  // Start session time tracking
-  if (!sessionStartTime) {
-    sessionStartTime = Date.now();
-  }
-}
+      timerState = state;
+      timeRemaining = duration * 60;
+      updateTimerDisplay();
+      
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        updateTimer();
+        updateTimeTracking();
+      }, 1000);
+      
+      // Start session time tracking
+      if (!sessionStartTime) {
+        sessionStartTime = Date.now();
+      }
+    }
+
     function updateTimer() {
-      if (isTimerPaused) return;  // Only check for pause state
+      if (isTimerPaused) return;
 
       timeRemaining--;
       updateTimerDisplay();
@@ -726,71 +734,63 @@ if (Notification.permission !== "granted") {
     }
 
     function updateTimerDisplay() {
-      // This will be handled by drawTimerOverlay()
+      // Handled by drawTimerOverlay()
     }
 
-function handleTimerEnd(state) {
-  // Request notification permission if not already granted
-  if (Notification.permission !== "granted") {
-    Notification.requestPermission().then(permission => {
-      if (permission === "granted") {
-        showNotification(state);
+    function handleTimerEnd(state) {
+      if (Notification.permission !== "granted") {
+        Notification.requestPermission().then(permission => {
+          if (permission === "granted") {
+            showNotification(state);
+          } else {
+            showAlert(state);
+          }
+        });
       } else {
-        // Fallback to alert if notifications not allowed
-        showAlert(state);
+        showNotification(state);
       }
-    });
-  } else {
-    showNotification(state);
-  }
-  
-  // Play appropriate sound
-  if (state === 'Focus') {
-    breakSound.currentTime = 0;
-    breakSound.play().catch(e => console.log("Audio play failed:", e));
-    startTimer(parseInt(shortBreakSelect.value || 5, 10), 'ShortBreak');
-  } else {
-    studySound.currentTime = 0;
-    studySound.play().catch(e => console.log("Audio play failed:", e));
-    startTimer(parseInt(focusTimeSelect.value || 25, 10), 'Focus');
-  }
-}
+      
+      // Play appropriate sound
+      if (state === 'Focus') {
+        breakSound.currentTime = 0;
+        breakSound.play().catch(e => console.log("Audio play failed:", e));
+        startTimer(parseInt(shortBreakSelect.value || 5, 10), 'ShortBreak');
+      } else {
+        studySound.currentTime = 0;
+        studySound.play().catch(e => console.log("Audio play failed:", e));
+        startTimer(parseInt(focusTimeSelect.value || 25, 10), 'Focus');
+      }
+    }
 
-function showNotification(state) {
-  let title, body;
-  
-  if (state === 'Focus') {
-    title = 'Time for a break!';
-    body = 'Your focus session has ended. Take a short break.';
-  } else if (state === 'ShortBreak') {
-    title = 'Break time over!';
-    body = 'Your short break has ended. Time to focus again.';
-  } else { // LongBreak
-    title = 'Break time over!';
-    body = 'Your long break has ended. Time to get back to work.';
-  }
-  
-  // Show notification
-  new Notification(title, { 
-    body: body,
-    icon: 'https://cdn-icons-png.flaticon.com/512/2913/2913103.png' // Optional icon
-  });
-}
+    function showNotification(state) {
+      let title, body;
+      
+      if (state === 'Focus') {
+        title = 'Time for a break!';
+        body = 'Your focus session has ended. Take a short break.';
+      } else if (state === 'ShortBreak') {
+        title = 'Break time over!';
+        body = 'Your short break has ended. Time to focus again.';
+      } else {
+        title = 'Break time over!';
+        body = 'Your long break has ended. Time to get back to work.';
+      }
+      
+      new Notification(title, { 
+        body: body,
+        icon: 'https://cdn-icons-png.flaticon.com/512/2913/2913103.png'
+      });
+    }
 
-function showAlert(state) {
-  if (state === 'Focus') {
-    alert('Time for a short break!');
-  } else if (state === 'ShortBreak') {
-    alert('Back to focus time!');
-  } else {
-    alert('Long break over! Get back to work!');
-  }
-}
-    
-    document.addEventListener('click', () => {
-      studySound.volume = 0.5;
-      breakSound.volume = 0.5;
-    }, { once: true });
+    function showAlert(state) {
+      if (state === 'Focus') {
+        alert('Time for a short break!');
+      } else if (state === 'ShortBreak') {
+        alert('Back to focus time!');
+      } else {
+        alert('Long break over! Get back to work!');
+      }
+    }
     
     function getFormattedTime() {
       const minutes = Math.floor(timeRemaining / 60);
@@ -980,68 +980,134 @@ function showAlert(state) {
     });
 
     // Recording Functions
-    startRecordingButton.addEventListener('click', () => {
-      const combinedStream = canvas.captureStream();
-      mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          recordedChunks.push(event.data);
+    startRecordingButton.addEventListener('click', async () => {
+      try {
+        // Ensure we have video stream
+        if (!videoStream) {
+          const success = await initializeVideo();
+          if (!success) {
+            throw new Error('Camera access required for recording');
+          }
         }
-      };
 
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(recordedChunks, { type: 'video/webm' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'session.webm';
-        document.body.appendChild(a);
-        a.click();
-        URL.revokeObjectURL(url);
-        recordedChunks = [];
+        const combinedStream = new MediaStream();
         
-        // Save total time when recording stops
-        saveTotalTime();
-      };
+        // Add webcam video tracks if available
+        if (videoStream) {
+          videoStream.getTracks().forEach(track => {
+            combinedStream.addTrack(track);
+          });
+        }
+        
+        // Add screen share tracks if available
+        if (screenStream) {
+          screenStream.getTracks().forEach(track => {
+            combinedStream.addTrack(track);
+          });
+        }
 
-      mediaRecorder.start();
-      recording = true;
-      sessionStartTime = Date.now();
+        // Create media recorder
+        mediaRecorder = new MediaRecorder(combinedStream, { 
+          mimeType: 'video/webm',
+          videoBitsPerSecond: 2500000
+        });
 
-      const focusTime = parseInt(focusTimeSelect.value || 25, 10);
-      startTimer(focusTime, 'Focus');
+        recordedChunks = []; // Reset chunks array
 
-      startRecordingButton.disabled = true;
-      stopRecordingButton.disabled = false;
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            recordedChunks.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = () => {
+          // Create and download the recording
+          const blob = new Blob(recordedChunks, { type: 'video/webm' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `pomodoro-session-${new Date().toISOString().slice(0, 19)}.webm`;
+          document.body.appendChild(a);
+          a.click();
+          
+          // Cleanup
+          setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          }, 100);
+          
+          // Save total time when recording stops
+          saveTotalTime();
+          
+          // Reset recording state
+          recording = false;
+          startRecordingButton.disabled = false;
+          stopRecordingButton.disabled = true;
+        };
+
+        mediaRecorder.onerror = (event) => {
+          console.error('MediaRecorder error:', event.error);
+          alert('Recording error occurred: ' + event.error);
+          stopRecording();
+        };
+
+        // Start recording
+        mediaRecorder.start(1000); // Collect data every 1 second
+        recording = true;
+        sessionStartTime = Date.now();
+
+        // Start the timer
+        const focusTime = parseInt(focusTimeSelect.value || 25, 10);
+        startTimer(focusTime, 'Focus');
+
+        // Update UI
+        startRecordingButton.disabled = true;
+        stopRecordingButton.disabled = false;
+        
+      } catch (error) {
+        console.error('Error starting recording:', error);
+        alert('Failed to start recording: ' + error.message);
+      }
     });
 
-    stopRecordingButton.addEventListener('click', () => {
+    // Unified stop recording function
+    function stopRecording() {
       if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
+        try {
+          mediaRecorder.stop();
+        } catch (e) {
+          console.error('Error stopping media recorder:', e);
+        }
       }
+      
+      // Clear timer
+      clearInterval(timerInterval);
+      
+      // Reset states
       recording = false;
       startRecordingButton.disabled = false;
       stopRecordingButton.disabled = true;
-    });
+    }
 
-    // Pause Timer Functionality
+    stopRecordingButton.addEventListener('click', stopRecording);
+
+    // Modified pause timer function to handle recording state
     pauseTimerButton.addEventListener('click', () => {
       isTimerPaused = !isTimerPaused;
       pauseTimerButton.textContent = isTimerPaused ? 'Resume Timer' : 'Pause Timer';
       
       if (isTimerPaused) {
         clearInterval(timerInterval);
-        if (mediaRecorder && recording) {
-          mediaRecorder.pause(); // Actually pause the recording
+        if (mediaRecorder && recording && mediaRecorder.state === 'recording') {
+          mediaRecorder.pause();
         }
       } else {
         timerInterval = setInterval(() => {
           updateTimer();
           updateTimeTracking();
         }, 1000);
-        if (mediaRecorder && recording) {
-          mediaRecorder.resume(); // Resume the recording
+        if (mediaRecorder && recording && mediaRecorder.state === 'paused') {
+          mediaRecorder.resume();
         }
       }
     });
@@ -1068,6 +1134,11 @@ function showAlert(state) {
         
         createScreenSettingsPanel();
         
+        // Handle screen sharing ending
+        screenStream.getVideoTracks()[0].onended = () => {
+          stopScreenShareButton.click();
+        };
+        
       } catch (error) {
         console.error('Error sharing screen:', error);
       }
@@ -1084,6 +1155,12 @@ function showAlert(state) {
       
       const panel = document.getElementById('screenSettingsPanel');
       if (panel) panel.remove();
+      
+      // If we're recording, restart recording with just webcam
+      if (recording) {
+        stopRecording();
+        setTimeout(() => startRecordingButton.click(), 500);
+      }
     });
 
     function createScreenSettingsPanel() {
@@ -1143,13 +1220,26 @@ function showAlert(state) {
       }
     });
 
+    // Handle page visibility changes
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        if (recording && !isTimerPaused) {
+          pauseTimerButton.click(); // Auto-pause when tab is hidden
+        }
+      }
+    });
+
     // Initialize the app
     initializeVideo();
     loadTasks();
     renderRoutine();
     loadTodaysRoutine();
     
-    // Start time tracking interval (runs every second)
+    // Handle audio autoplay policy
+    document.addEventListener('click', () => {
+      studySound.volume = 0.5;
+      breakSound.volume = 0.5;
+    }, { once: true });
   </script>
 </body>
 </html>
