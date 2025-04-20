@@ -446,37 +446,82 @@
   </main>
 
 <script>
-    // Select Elements
-    // IndexedDB variables
+// Select Elements
+// IndexedDB variables
 let db;
 const DB_NAME = 'PomodoroRecorderDB';
 const STORE_NAME = 'videoChunks';
 const SESSION_KEY = 'currentRecordingSession';
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    const startRecordingButton = document.getElementById('startRecording');
-    const stopRecordingButton = document.getElementById('stopRecording');
-    const focusTimeSelect = document.getElementById('focusTime');
-    const shortBreakSelect = document.getElementById('shortBreak');
-    const longBreakSelect = document.getElementById('longBreak');
-    const taskInput = document.getElementById('taskInput');
-    const taskList = document.getElementById('taskList');
-    const addTaskButton = document.getElementById('addTask');
-    const pauseTimerButton = document.getElementById('pauseTimer');
-    const shareScreenButton = document.getElementById('shareScreen');
-    const stopScreenShareButton = document.getElementById('stopScreenShare');
-    const routineContainer = document.getElementById('routineContainer');
-    const saveRoutineButton = document.getElementById('saveRoutine');
-    const tabs = document.querySelectorAll('.tab');
-    const tabContents = document.querySelectorAll('.tab-content');
 
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const startRecordingButton = document.getElementById('startRecording');
+const stopRecordingButton = document.getElementById('stopRecording');
+const focusTimeSelect = document.getElementById('focusTime');
+const shortBreakSelect = document.getElementById('shortBreak');
+const longBreakSelect = document.getElementById('longBreak');
+const taskInput = document.getElementById('taskInput');
+const taskList = document.getElementById('taskList');
+const addTaskButton = document.getElementById('addTask');
+const pauseTimerButton = document.getElementById('pauseTimer');
+const shareScreenButton = document.getElementById('shareScreen');
+const stopScreenShareButton = document.getElementById('stopScreenShare');
+const routineContainer = document.getElementById('routineContainer');
+const saveRoutineButton = document.getElementById('saveRoutine');
+const tabs = document.querySelectorAll('.tab');
+const tabContents = document.querySelectorAll('.tab-content');
+
+// Audio elements
+const studySound = document.getElementById('studySound');
+const breakSound = document.getElementById('breakSound');
+document.getElementById('soundVolume').addEventListener('input', (e) => {
+  studySound.volume = e.target.value;
+  breakSound.volume = e.target.value;
+});
+
+// Set initial volume (0.5 = 50%)
+studySound.volume = 0.5;
+breakSound.volume = 0.5;
+
+// Create video elements
+const webcamVideo = document.createElement('video');
+let screenVideo = document.createElement('video');
+
+// Variables
+let videoStream;
+let screenStream;
+let mediaRecorder;
+let recordedChunks = [];
+let timerInterval;
+let timeRemaining;
+let tasks = [];
+let routineTasks = {
+  monday: [], tuesday: [], wednesday: [], thursday: [],
+  friday: [], saturday: [], sunday: []
+};
+let recording = false;
+let isTimerPaused = false;
+let isScreenSharing = false;
+let timerState = 'Focus'; // 'Focus', 'ShortBreak', 'LongBreak'
+
+// Daily Time Tracking
+let dailyTimeData = {};
+let currentDate = new Date().toISOString().split('T')[0];
+let dailyTimeGoal = 8 * 3600; // 8 hours in seconds (default)
+let lastSavedTime = 0;
+let lastTimeUpdate = Date.now();
+
+// Initialize Canvas
+canvas.width = 640;
+canvas.height = 480;
+
+// Initialize IndexedDB
 async function initDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);
     
     request.onerror = (event) => {
       console.error("Database error:", event.target.error);
-      alert("Failed to initialize database. Some features may not work.");
       reject(event.target.error);
     };
     
@@ -491,181 +536,170 @@ async function initDB() {
         db.createObjectStore(STORE_NAME, { autoIncrement: true });
       }
     };
-    
-    request.onblocked = (event) => {
-      console.error("Database blocked:", event);
-      alert("Database is blocked. Please close other tabs using this app.");
-      reject(new Error("Database blocked"));
-    };
   });
 }
 
-    // Audio elements
-    const studySound = document.getElementById('studySound');
-    const breakSound = document.getElementById('breakSound');
-    document.getElementById('soundVolume').addEventListener('input', (e) => {
-      studySound.volume = e.target.value;
-      breakSound.volume = e.target.value;
-    });
-    // Set initial volume (0.5 = 50%)
-    studySound.volume = 0.5;
-    breakSound.volume = 0.5;
+// Load all data
+function loadInitialData() {
+  // Load tasks
+  const savedTasks = localStorage.getItem('tasks');
+  tasks = savedTasks ? JSON.parse(savedTasks) : [];
+  
+  // Load routine
+  const savedRoutine = localStorage.getItem('routineTasks');
+  routineTasks = savedRoutine ? JSON.parse(savedRoutine) : {
+    monday: [], tuesday: [], wednesday: [], thursday: [],
+    friday: [], saturday: [], sunday: []
+  };
+  
+  // Load daily time data
+  const savedTimeData = localStorage.getItem('dailyTimeData');
+  dailyTimeData = savedTimeData ? JSON.parse(savedTimeData) : {};
+  
+  // Load daily goal
+  const savedGoal = localStorage.getItem('dailyTimeGoal');
+  dailyTimeGoal = savedGoal ? parseInt(savedGoal, 10) : 8 * 3600;
+  
+  // Initialize current day
+  currentDate = new Date().toISOString().split('T')[0];
+  if (!dailyTimeData[currentDate]) {
+    dailyTimeData[currentDate] = 0;
+  }
+  
+  renderTaskList();
+  renderRoutine();
+  loadTodaysRoutine();
+}
+
+// Save daily time data
+function saveDailyTime() {
+  localStorage.setItem('dailyTimeData', JSON.stringify(dailyTimeData));
+}
+
+// Update time tracking with accurate elapsed time
+function updateTimeTracking() {
+  if (!recording || isTimerPaused) {
+    lastTimeUpdate = Date.now();
+    return;
+  }
+
+  // Check for new day
+  const today = new Date().toISOString().split('T')[0];
+  if (today !== currentDate) {
+    currentDate = today;
+    if (!dailyTimeData[currentDate]) {
+      dailyTimeData[currentDate] = 0;
+    }
+    saveDailyTime();
+  }
+
+  // Calculate elapsed time
+  const now = Date.now();
+  const elapsedSeconds = Math.floor((now - lastTimeUpdate) / 1000);
+  
+  if (elapsedSeconds >= 1) {
+    dailyTimeData[currentDate] += elapsedSeconds;
+    lastSavedTime += elapsedSeconds;
+    lastTimeUpdate = now;
     
-    // Create video elements for webcam and screen sharing
-    const webcamVideo = document.createElement('video');
-    let screenVideo = document.createElement('video');
-
-    // Variables
-    let videoStream;
-    let screenStream;
-    let mediaRecorder;
-    let recordedChunks = [];
-    let timerInterval;
-    let timeRemaining;
-    let tasks = [];
-    let routineTasks = {
-      monday: [],
-      tuesday: [],
-      wednesday: [],
-      thursday: [],
-      friday: [],
-      saturday: [],
-      sunday: []
-    };
-    let recording = false;
-    let isTimerPaused = false;
-    let isScreenSharing = false;
-    let timerState = 'Focus'; // 'Focus', 'ShortBreak', 'LongBreak'
+    // Check daily goal
+    if (dailyTimeData[currentDate] >= dailyTimeGoal) {
+      showGoalNotification();
+    }
     
-    // Time Tracking Variables
-    let totalTimeSpent = 0; // in seconds
-    let sessionStartTime = 0;
-    let lastSavedTime = 0;
-    
-    // Screen sharing settings
-    let screenPosition = { x: canvas.width - 200, y: 70 };
-    let screenSize = { width: 180, height: 120 };
-
-    // Initialize Canvas
-    canvas.width = 640;
-    canvas.height = 480;
-
-    // Tab functionality
-    tabs.forEach(tab => {
-      tab.addEventListener('click', () => {
-        tabs.forEach(t => t.classList.remove('active'));
-        tabContents.forEach(c => c.classList.remove('active'));
-        
-        tab.classList.add('active');
-        const tabId = tab.getAttribute('data-tab');
-        document.getElementById(tabId).classList.add('active');
-      });
-    });
-
-async function checkStorageQuota() {
-  if (navigator.storage && navigator.storage.estimate) {
-    try {
-      const quota = await navigator.storage.estimate();
-      console.log(`Storage quota: ${quota.quota}, usage: ${quota.usage}`);
-      if (quota.usage / quota.quota > 0.9) {
-        alert("Warning: Storage space is almost full. Some features may not work properly.");
-      }
-    } catch (error) {
-      console.error("Storage quota check failed:", error);
+    // Save periodically
+    if (lastSavedTime >= 60) {
+      saveDailyTime();
+      lastSavedTime = 0;
     }
   }
 }
 
-// Call this periodically during recording
-setInterval(checkStorageQuota, 300000); // Every 5 minutes
-
-    // Load tasks from local storage
-    function loadTasks() {
-      const savedTasks = localStorage.getItem('tasks');
-      if (savedTasks) {
-        tasks = JSON.parse(savedTasks);
-        renderTaskList();
+// Daily goal notification
+function showGoalNotification() {
+  if (Notification.permission === "granted") {
+    new Notification("Daily Goal Reached!", {
+      body: `You've completed your ${formatTime(dailyTimeGoal)} goal for today!`,
+      icon: 'https://cdn-icons-png.flaticon.com/512/2913/2913103.png'
+    });
+  } else if (Notification.permission !== "denied") {
+    Notification.requestPermission().then(permission => {
+      if (permission === "granted") {
+        showGoalNotification();
       }
-      
-      const savedRoutine = localStorage.getItem('routineTasks');
-      if (savedRoutine) {
-        routineTasks = JSON.parse(savedRoutine);
-        renderRoutine();
-      }
-      
-      // Load total time spent
-      const savedTime = localStorage.getItem('totalTimeSpent');
-      if (savedTime) {
-        totalTimeSpent = parseInt(savedTime, 10);
-      }
-    }
+    });
+  }
+}
 
-    // Save tasks to local storage
-    function saveTasks() {
-      localStorage.setItem('tasks', JSON.stringify(tasks));
-    }
+// Set daily goal
+function setDailyGoal(hours) {
+  dailyTimeGoal = hours * 3600;
+  localStorage.setItem('dailyTimeGoal', dailyTimeGoal.toString());
+}
 
-    // Save routine to local storage
-    function saveRoutine() {
-      localStorage.setItem('routineTasks', JSON.stringify(routineTasks));
-    }
+// Format time
+function formatTime(seconds) {
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
 
-    // Save total time spent
-    function saveTotalTime() {
-      localStorage.setItem('totalTimeSpent', totalTimeSpent.toString());
-    }
+// Draw time tracker with goal progress
+function drawTimeTracker() {
+  const today = new Date().toISOString().split('T')[0];
+  const timeSpent = dailyTimeData[today] || 0;
+  const progress = Math.min(timeSpent / dailyTimeGoal, 1);
+  
+  // Time display
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.fillRect(10, canvas.height - 70, 300, 60);
+  ctx.fillStyle = 'white';
+  ctx.font = '16px Arial';
+  ctx.fillText(`Today: ${formatTime(timeSpent)}`, 20, canvas.height - 50);
+  ctx.fillText(`Goal: ${formatTime(dailyTimeGoal)} (${Math.round(progress * 100)}%)`, 20, canvas.height - 30);
+  
+  // Progress bar
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.fillRect(10, canvas.height - 20, 300, 10);
+  ctx.fillStyle = progress >= 1 ? 'gold' : 'lime';
+  ctx.fillRect(10, canvas.height - 20, 300 * progress, 10);
+}
 
-    // Load routine tasks for today
-    function loadTodaysRoutine() {
-      const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-      const today = new Date().getDay();
-      const todaysDay = days[today];
-      
-      // Check if we've already loaded today's routine
-      const lastRoutineLoad = localStorage.getItem('lastRoutineLoad');
-      const todayDate = new Date().toDateString();
-      
-      if (lastRoutineLoad !== todayDate) {
-        const todaysTasks = routineTasks[todaysDay];
-        if (todaysTasks && todaysTasks.length > 0) {
-          // Add today's routine tasks to the main task list
-          tasks = [...tasks, ...todaysTasks.map(task => ({ text: task, completed: false }))];
-          renderTaskList();
-          saveTasks();
-          // Mark that we've loaded today's routine
-          localStorage.setItem('lastRoutineLoad', todayDate);
-        }
-      }
+// Add goal setting UI
+function addGoalControls() {
+  const goalContainer = document.createElement('div');
+  goalContainer.className = 'goal-controls';
+  goalContainer.style.position = 'fixed';
+  goalContainer.style.bottom = '20px';
+  goalContainer.style.right = '20px';
+  goalContainer.style.backgroundColor = 'rgba(0,0,0,0.7)';
+  goalContainer.style.padding = '10px';
+  goalContainer.style.borderRadius = '5px';
+  goalContainer.style.color = 'white';
+  goalContainer.style.zIndex = '1000';
+  
+  goalContainer.innerHTML = `
+    <h3 style="margin-top:0;">Daily Goal</h3>
+    <input type="number" id="dailyGoalHours" min="1" max="12" value="${dailyTimeGoal / 3600}" style="width:50px;">
+    <button id="setGoal" style="margin-left:5px;">Set Hours</button>
+  `;
+  document.body.appendChild(goalContainer);
+  
+  document.getElementById('setGoal').addEventListener('click', () => {
+    const hours = parseInt(document.getElementById('dailyGoalHours').value);
+    if (hours >= 1 && hours <= 12) {
+      setDailyGoal(hours);
+      alert(`Daily goal set to ${hours} hours`);
+    } else {
+      alert('Please enter a value between 1 and 12 hours');
     }
+  });
+}
 
-    // Format time for display
-    function formatTime(seconds) {
-      const hours = Math.floor(seconds / 3600);
-      const minutes = Math.floor((seconds % 3600) / 60);
-      const secs = seconds % 60;
-      
-      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-
-    // Update time tracking
-    function updateTimeTracking() {
-      if (!isTimerPaused && recording) {
-        totalTimeSpent++;
-        lastSavedTime++;
-        
-        // Save to localStorage every minute (60 seconds)
-        if (lastSavedTime >= 60) {
-          saveTotalTime();
-          lastSavedTime = 0;
-        }
-      }
-    }
-
-    // Initialize Video
- async function initializeVideo() {
+// Initialize video
+async function initializeVideo() {
   try {
-    await initDB(); // Initialize DB first
-    
     videoStream = await navigator.mediaDevices.getUserMedia({ 
       video: { 
         width: { ideal: canvas.width },
@@ -676,373 +710,352 @@ setInterval(checkStorageQuota, 300000); // Every 5 minutes
     webcamVideo.play();
     drawFrame();
     
-    // Request notification permission on page load
+    // Request notification permission
     if (Notification.permission !== "granted") {
       Notification.requestPermission();
     }
   } catch (error) {
     console.error('Error accessing video stream:', error);
-    // Fallback: Show message if camera access fails
+    // Fallback display
     ctx.fillStyle = 'black';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = 'white';
     ctx.font = '20px Arial';
     ctx.fillText('Camera access denied or not available', 50, canvas.height/2);
-    // Start drawing anyway (without video)
     drawFrame();
   }
 }
 
-    // Main Drawing Function
-    function drawFrame() {
-      // Clear canvas
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
-      // Draw webcam video if available
-      if (videoStream && webcamVideo.readyState >= webcamVideo.HAVE_ENOUGH_DATA) {
-        try {
-          ctx.drawImage(webcamVideo, 0, 0, canvas.width, canvas.height);
-        } catch (e) {
-          console.error('Error drawing video:', e);
-        }
-      }
-      
-      // Draw screen share if active
-      if (isScreenSharing && screenStream && screenVideo.readyState >= screenVideo.HAVE_ENOUGH_DATA) {
-        try {
-          ctx.drawImage(
-            screenVideo, 
-            screenPosition.x, 
-            screenPosition.y, 
-            screenSize.width, 
-            screenSize.height
-          );
-          
-          // Add border to screen share
-          ctx.strokeStyle = 'red';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(
-            screenPosition.x, 
-            screenPosition.y, 
-            screenSize.width, 
-            screenSize.height
-          );
-        } catch (e) {
-          console.log('Error drawing screen share:', e);
-        }
-      }
-      
-      // Draw overlays
-      drawTimerOverlay();
-      drawTaskOverlay();
-      drawProgressCircle();
-      drawTaskProgressCircle();
-      drawRecordingIndicator();
-      drawTimeTracker();
-      
-      requestAnimationFrame(drawFrame);
+// Main drawing function
+function drawFrame() {
+  // Clear canvas
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  // Draw webcam video if available
+  if (videoStream && webcamVideo.readyState >= webcamVideo.HAVE_ENOUGH_DATA) {
+    try {
+      ctx.drawImage(webcamVideo, 0, 0, canvas.width, canvas.height);
+    } catch (e) {
+      console.error('Error drawing video:', e);
     }
-
-    // Draw time tracker
-    function drawTimeTracker() {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-      ctx.fillRect(10, canvas.height - 40, 200, 30);
-      ctx.fillStyle = 'white';
-      ctx.font = '16px Arial';
-      ctx.fillText(`Total: ${formatTime(totalTimeSpent)}`, 20, canvas.height - 20);
-    }
-
-    // Timer Functions
-    function startTimer(duration, state) {
-      timerState = state;
-      timeRemaining = duration * 60;
-      updateTimerDisplay();
-      
-      clearInterval(timerInterval);
-      timerInterval = setInterval(() => {
-        updateTimer();
-        updateTimeTracking();
-      }, 1000);
-      
-      // Start session time tracking
-      if (!sessionStartTime) {
-        sessionStartTime = Date.now();
-      }
-    }
-
-    function updateTimer() {
-      if (isTimerPaused) return;  // Only check for pause state
-
-      timeRemaining--;
-      updateTimerDisplay();
-      
-      if (timeRemaining <= 0) {
-        clearInterval(timerInterval);
-        handleTimerEnd(timerState);
-      }
-    }
-
-    function updateTimerDisplay() {
-      // This will be handled by drawTimerOverlay()
-    }
-
-function handleTimerEnd(state) {
-  // Request notification permission if not already granted
-  if (Notification.permission !== "granted") {
-    Notification.requestPermission().then(permission => {
-      if (permission === "granted") {
-        showNotification(state);
-      } else {
-        // Fallback to alert if notifications not allowed
-        showAlert(state);
-      }
-    });
-  } else {
-    showNotification(state);
   }
+  
+  // Draw screen share if active
+  if (isScreenSharing && screenStream && screenVideo.readyState >= screenVideo.HAVE_ENOUGH_DATA) {
+    try {
+      ctx.drawImage(
+        screenVideo, 
+        screenPosition.x, 
+        screenPosition.y, 
+        screenSize.width, 
+        screenSize.height
+      );
+      
+      // Add border to screen share
+      ctx.strokeStyle = 'red';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(
+        screenPosition.x, 
+        screenPosition.y, 
+        screenSize.width, 
+        screenSize.height
+      );
+    } catch (e) {
+      console.log('Error drawing screen share:', e);
+    }
+  }
+  
+  // Draw overlays
+  drawTimerOverlay();
+  drawTaskOverlay();
+  drawProgressCircle();
+  drawTaskProgressCircle();
+  drawRecordingIndicator();
+  drawTimeTracker();
+  
+  requestAnimationFrame(drawFrame);
+}
+
+// Timer functions
+function startTimer(duration, state) {
+  timerState = state;
+  timeRemaining = duration * 60;
+  lastTimeUpdate = Date.now();
+  updateTimerDisplay();
+  
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    updateTimer();
+    updateTimeTracking();
+  }, 1000);
   
   // Play appropriate sound
   if (state === 'Focus') {
-    breakSound.currentTime = 0;
-    breakSound.play().catch(e => console.log("Audio play failed:", e));
-    startTimer(parseInt(shortBreakSelect.value || 5, 10), 'ShortBreak');
-  } else {
     studySound.currentTime = 0;
     studySound.play().catch(e => console.log("Audio play failed:", e));
+  } else {
+    breakSound.currentTime = 0;
+    breakSound.play().catch(e => console.log("Audio play failed:", e));
+  }
+}
+
+function updateTimer() {
+  if (isTimerPaused) return;
+
+  const now = Date.now();
+  const elapsedSeconds = Math.floor((now - lastTimeUpdate) / 1000);
+  
+  if (elapsedSeconds >= 1) {
+    timeRemaining -= elapsedSeconds;
+    lastTimeUpdate = now;
+    updateTimerDisplay();
+    
+    if (timeRemaining <= 0) {
+      clearInterval(timerInterval);
+      handleTimerEnd(timerState);
+    }
+  }
+}
+
+function updateTimerDisplay() {
+  // Handled by drawTimerOverlay()
+}
+
+function handleTimerEnd(state) {
+  if (Notification.permission === "granted") {
+    const title = state === 'Focus' ? 'Time for a break!' : 'Break time over!';
+    const body = state === 'Focus' 
+      ? 'Your focus session has ended. Take a short break.'
+      : 'Your break has ended. Time to focus again.';
+    
+    new Notification(title, { 
+      body: body,
+      icon: 'https://cdn-icons-png.flaticon.com/512/2913/2913103.png'
+    });
+  }
+  
+  // Start next timer
+  if (state === 'Focus') {
+    startTimer(parseInt(shortBreakSelect.value || 5, 10), 'ShortBreak');
+  } else {
     startTimer(parseInt(focusTimeSelect.value || 25, 10), 'Focus');
   }
 }
 
-function showNotification(state) {
-  let title, body;
+// Drawing functions
+function drawTimerOverlay() {
+  const minutes = Math.floor(timeRemaining / 60);
+  const seconds = timeRemaining % 60;
+  const timerText = `${timerState}: ${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   
-  if (state === 'Focus') {
-    title = 'Time for a break!';
-    body = 'Your focus session has ended. Take a short break.';
-  } else if (state === 'ShortBreak') {
-    title = 'Break time over!';
-    body = 'Your short break has ended. Time to focus again.';
-  } else { // LongBreak
-    title = 'Break time over!';
-    body = 'Your long break has ended. Time to get back to work.';
-  }
-  
-  // Show notification
-  new Notification(title, { 
-    body: body,
-    icon: 'https://cdn-icons-png.flaticon.com/512/2913/2913103.png' // Optional icon
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.fillRect(10, 10, 250, 50);
+  ctx.fillStyle = 'white';
+  ctx.font = '20px Arial';
+  ctx.fillText(timerText, 20, 40);
+}
+
+function drawProgressCircle() {
+  const totalTime = timerState === 'Focus'
+    ? parseInt(focusTimeSelect.value || 25, 10) * 60
+    : timerState === 'ShortBreak'
+    ? parseInt(shortBreakSelect.value || 5, 10) * 60
+    : parseInt(longBreakSelect.value || 15, 10) * 60;
+
+  const progress = totalTime ? (totalTime - timeRemaining) / totalTime : 0;
+
+  const centerX = canvas.width - 100;
+  const centerY = canvas.height - 100;
+  const radius = 40;
+
+  // Background Circle
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.fill();
+
+  // Progress Circle
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, -Math.PI / 2, -Math.PI / 2 + (2 * Math.PI * progress));
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = 'green';
+  ctx.stroke();
+
+  // Percentage Text
+  ctx.fillStyle = 'white';
+  ctx.font = '16px Arial';
+  ctx.fillText(`${Math.round(progress * 100)}%`, centerX - 20, centerY + 5);
+}
+
+function drawTaskProgressCircle() {
+  const completedTasks = tasks.filter(task => task.completed).length;
+  const totalTasks = tasks.length;
+  const progress = totalTasks > 0 ? completedTasks / totalTasks : 0;
+
+  const centerX = 100;
+  const centerY = canvas.height - 100;
+  const radius = 40;
+
+  // Background Circle
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.fill();
+
+  // Progress Circle
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, -Math.PI / 2, -Math.PI / 2 + (2 * Math.PI * progress));
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = 'blue';
+  ctx.stroke();
+
+  // Percentage Text
+  ctx.fillStyle = 'white';
+  ctx.font = '16px Arial';
+  ctx.fillText(`${Math.round(progress * 100)}%`, centerX - 20, centerY + 5);
+}
+
+function drawTaskOverlay() {
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.fillRect(10, 70, 300, 200);
+  ctx.fillStyle = 'white';
+  ctx.font = '16px Arial';
+
+  tasks.forEach((task, index) => {
+    const status = task.completed ? '✔' : '❌';
+    ctx.fillText(`${index + 1}. ${task.text} (${status})`, 20, 100 + index * 20);
   });
 }
 
-function showAlert(state) {
-  if (state === 'Focus') {
-    alert('Time for a short break!');
-  } else if (state === 'ShortBreak') {
-    alert('Back to focus time!');
-  } else {
-    alert('Long break over! Get back to work!');
+function drawRecordingIndicator() {
+  if (recording) {
+    ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
+    ctx.fillRect(canvas.width - 120, 10, 110, 50);
+    ctx.fillStyle = 'white';
+    ctx.font = '16px Arial';
+    ctx.fillText('Recording', canvas.width - 110, 40);
   }
 }
-    
-    document.addEventListener('click', () => {
-      studySound.volume = 0.5;
-      breakSound.volume = 0.5;
-    }, { once: true });
-    
-    function getFormattedTime() {
-      const minutes = Math.floor(timeRemaining / 60);
-      const seconds = timeRemaining % 60;
-      return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    }
 
-    // Drawing Functions
-    function drawTimerOverlay() {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-      ctx.fillRect(10, 10, 250, 50);
-      ctx.fillStyle = 'white';
-      ctx.font = '20px Arial';
-      ctx.fillText(`${timerState}: ${getFormattedTime()}`, 20, 40);
-    }
+// Task functions
+addTaskButton.addEventListener('click', () => {
+  const taskText = taskInput.value.trim();
+  if (taskText) {
+    tasks.push({ text: taskText, completed: false });
+    renderTaskList();
+    saveTasks();
+    taskInput.value = '';
+  }
+});
 
-    function drawProgressCircle() {
-      const totalTime = timerState === 'Focus'
-        ? parseInt(focusTimeSelect.value || 25, 10) * 60
-        : timerState === 'ShortBreak'
-        ? parseInt(shortBreakSelect.value || 5, 10) * 60
-        : parseInt(longBreakSelect.value || 15, 10) * 60;
-
-      const progress = totalTime ? (totalTime - timeRemaining) / totalTime : 0;
-
-      const centerX = canvas.width - 100;
-      const centerY = canvas.height - 100;
-      const radius = 40;
-
-      // Background Circle
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-      ctx.fill();
-
-      // Progress Circle
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, radius, -Math.PI / 2, -Math.PI / 2 + (2 * Math.PI * progress));
-      ctx.lineWidth = 8;
-      ctx.strokeStyle = 'green';
-      ctx.stroke();
-
-      // Percentage Text
-      ctx.fillStyle = 'white';
-      ctx.font = '16px Arial';
-      ctx.fillText(`${Math.round(progress * 100)}%`, centerX - 20, centerY + 5);
-    }
-
-    function drawTaskProgressCircle() {
-      const completedTasks = tasks.filter(task => task.completed).length;
-      const totalTasks = tasks.length;
-      const progress = totalTasks > 0 ? completedTasks / totalTasks : 0;
-
-      const centerX = 100;
-      const centerY = canvas.height - 100;
-      const radius = 40;
-
-      // Background Circle
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-      ctx.fill();
-
-      // Progress Circle
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, radius, -Math.PI / 2, -Math.PI / 2 + (2 * Math.PI * progress));
-      ctx.lineWidth = 8;
-      ctx.strokeStyle = 'blue';
-      ctx.stroke();
-
-      // Percentage Text
-      ctx.fillStyle = 'white';
-      ctx.font = '16px Arial';
-      ctx.fillText(`${Math.round(progress * 100)}%`, centerX - 20, centerY + 5);
-    }
-
-    function drawTaskOverlay() {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-      ctx.fillRect(10, 70, 300, 200);
-      ctx.fillStyle = 'white';
-      ctx.font = '16px Arial';
-
-      tasks.forEach((task, index) => {
-        const status = task.completed ? '✔' : '❌';
-        ctx.fillText(`${index + 1}. ${task.text} (${status})`, 20, 100 + index * 20);
-      });
-    }
-
-    function drawRecordingIndicator() {
-      if (recording) {
-        ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
-        ctx.fillRect(canvas.width - 120, 10, 110, 50);
-        ctx.fillStyle = 'white';
-        ctx.font = '16px Arial';
-        ctx.fillText('Recording', canvas.width - 110, 40);
-      }
-    }
-
-    // Task Functions
-    addTaskButton.addEventListener('click', () => {
-      const taskText = taskInput.value.trim();
-      if (taskText) {
-        tasks.push({ text: taskText, completed: false });
-        renderTaskList();
-        saveTasks();
-        taskInput.value = '';
-      }
+function renderTaskList() {
+  taskList.innerHTML = '';
+  tasks.forEach((task, index) => {
+    const li = document.createElement('li');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = `task-${index}`;
+    checkbox.checked = task.completed;
+    checkbox.addEventListener('change', () => {
+      tasks[index].completed = checkbox.checked;
+      saveTasks();
     });
 
-    function renderTaskList() {
-      taskList.innerHTML = '';
-      tasks.forEach((task, index) => {
-        const li = document.createElement('li');
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.id = `task-${index}`;
-        checkbox.checked = task.completed;
-        checkbox.addEventListener('change', () => {
-          tasks[index].completed = checkbox.checked;
-          saveTasks();
-        });
+    const label = document.createElement('label');
+    label.htmlFor = `task-${index}`;
+    label.textContent = task.text;
 
-        const label = document.createElement('label');
-        label.htmlFor = `task-${index}`;
-        label.textContent = task.text;
-
-        const deleteButton = document.createElement('button');
-        deleteButton.className = 'delete-task';
-        deleteButton.textContent = 'Delete';
-        deleteButton.addEventListener('click', () => {
-          tasks.splice(index, 1);
-          renderTaskList();
-          saveTasks();
-        });
-
-        li.appendChild(checkbox);
-        li.appendChild(label);
-        li.appendChild(deleteButton);
-        taskList.appendChild(li);
-      });
-    }
-
-    // Routine Functions
-    function renderRoutine() {
-      routineContainer.innerHTML = '';
-      
-      const days = [
-        { id: 'monday', name: 'Monday' },
-        { id: 'tuesday', name: 'Tuesday' },
-        { id: 'wednesday', name: 'Wednesday' },
-        { id: 'thursday', name: 'Thursday' },
-        { id: 'friday', name: 'Friday' },
-        { id: 'saturday', name: 'Saturday' },
-        { id: 'sunday', name: 'Sunday' }
-      ];
-      
-      days.forEach(day => {
-        const dayContainer = document.createElement('div');
-        dayContainer.className = 'routine-day';
-        
-        const label = document.createElement('label');
-        label.textContent = day.name;
-        
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.className = 'routine-tasks';
-        input.placeholder = 'Enter tasks separated by commas';
-        input.value = routineTasks[day.id].join(', ');
-        
-        dayContainer.appendChild(label);
-        dayContainer.appendChild(input);
-        routineContainer.appendChild(dayContainer);
-      });
-    }
-    
-    saveRoutineButton.addEventListener('click', () => {
-      const inputs = document.querySelectorAll('.routine-tasks');
-      
-      inputs.forEach(input => {
-        const dayId = input.previousElementSibling.textContent.toLowerCase();
-        const tasks = input.value.split(',').map(task => task.trim()).filter(task => task);
-        routineTasks[dayId] = tasks;
-      });
-      
-      saveRoutine();
-      alert('Routine saved!');
+    const deleteButton = document.createElement('button');
+    deleteButton.className = 'delete-task';
+    deleteButton.textContent = 'Delete';
+    deleteButton.addEventListener('click', () => {
+      tasks.splice(index, 1);
+      renderTaskList();
+      saveTasks();
     });
 
-    // Recording Functions
+    li.appendChild(checkbox);
+    li.appendChild(label);
+    li.appendChild(deleteButton);
+    taskList.appendChild(li);
+  });
+}
+
+function saveTasks() {
+  localStorage.setItem('tasks', JSON.stringify(tasks));
+}
+
+// Routine functions
+function renderRoutine() {
+  routineContainer.innerHTML = '';
+  
+  const days = [
+    { id: 'monday', name: 'Monday' },
+    { id: 'tuesday', name: 'Tuesday' },
+    { id: 'wednesday', name: 'Wednesday' },
+    { id: 'thursday', name: 'Thursday' },
+    { id: 'friday', name: 'Friday' },
+    { id: 'saturday', name: 'Saturday' },
+    { id: 'sunday', name: 'Sunday' }
+  ];
+  
+  days.forEach(day => {
+    const dayContainer = document.createElement('div');
+    dayContainer.className = 'routine-day';
+    
+    const label = document.createElement('label');
+    label.textContent = day.name;
+    
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'routine-tasks';
+    input.placeholder = 'Enter tasks separated by commas';
+    input.value = routineTasks[day.id].join(', ');
+    
+    dayContainer.appendChild(label);
+    dayContainer.appendChild(input);
+    routineContainer.appendChild(dayContainer);
+  });
+}
+
+function saveRoutine() {
+  const inputs = document.querySelectorAll('.routine-tasks');
+  
+  inputs.forEach(input => {
+    const dayId = input.previousElementSibling.textContent.toLowerCase();
+    const tasks = input.value.split(',').map(task => task.trim()).filter(task => task);
+    routineTasks[dayId] = tasks;
+  });
+  
+  localStorage.setItem('routineTasks', JSON.stringify(routineTasks));
+  alert('Routine saved!');
+}
+
+function loadTodaysRoutine() {
+  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const today = new Date().getDay();
+  const todaysDay = days[today];
+  
+  // Check if we've already loaded today's routine
+  const lastRoutineLoad = localStorage.getItem('lastRoutineLoad');
+  const todayDate = new Date().toDateString();
+  
+  if (lastRoutineLoad !== todayDate) {
+    const todaysTasks = routineTasks[todaysDay];
+    if (todaysTasks && todaysTasks.length > 0) {
+      tasks = [...tasks, ...todaysTasks.map(task => ({ text: task, completed: false }))];
+      renderTaskList();
+      saveTasks();
+      localStorage.setItem('lastRoutineLoad', todayDate);
+    }
+  }
+}
+
+// Recording functions
 startRecordingButton.addEventListener('click', async () => {
   try {
-    // Initialize DB if not already done
     if (!db) await initDB();
     
-    // Load any existing chunks from previous session
     const previousChunks = await loadChunksFromDB();
     recordedChunks = previousChunks;
     
@@ -1052,8 +1065,7 @@ startRecordingButton.addEventListener('click', async () => {
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0) {
         recordedChunks.push(event.data);
-        // Periodically save chunks to DB
-        if (recordedChunks.length % 5 === 0) { // Save every 5 chunks
+        if (recordedChunks.length % 5 === 0) {
           saveChunksToDB(recordedChunks);
         }
       }
@@ -1063,19 +1075,15 @@ startRecordingButton.addEventListener('click', async () => {
       await finalizeRecording();
     };
 
-    mediaRecorder.start(1000); // Collect data every second
+    mediaRecorder.start(1000);
     recording = true;
     
-    // Check if we're resuming a session
     const savedSession = loadRecordingSession();
     if (savedSession) {
       timerState = savedSession.timerState;
       timeRemaining = savedSession.timeRemaining;
-      sessionStartTime = savedSession.sessionStartTime;
-      totalTimeSpent = savedSession.totalTimeSpent;
       startTimer(Math.ceil(timeRemaining / 60), timerState);
     } else {
-      sessionStartTime = Date.now();
       const focusTime = parseInt(focusTimeSelect.value || 25, 10);
       startTimer(focusTime, 'Focus');
     }
@@ -1096,140 +1104,88 @@ stopRecordingButton.addEventListener('click', async () => {
   recording = false;
   startRecordingButton.disabled = false;
   stopRecordingButton.disabled = true;
-  
-  // Save chunks to IndexedDB before finalizing
   await saveChunksToDB(recordedChunks);
   clearRecordingSession();
 });
 
-    // Pause Timer Functionality
-    pauseTimerButton.addEventListener('click', () => {
-      isTimerPaused = !isTimerPaused;
-      pauseTimerButton.textContent = isTimerPaused ? 'Resume Timer' : 'Pause Timer';
-      
-      if (isTimerPaused) {
-        clearInterval(timerInterval);
-        if (mediaRecorder && recording) {
-          mediaRecorder.pause(); // Actually pause the recording
-        }
-      } else {
-        timerInterval = setInterval(() => {
-          updateTimer();
-          updateTimeTracking();
-        }, 1000);
-        if (mediaRecorder && recording) {
-          mediaRecorder.resume(); // Resume the recording
-        }
-      }
+// Screen sharing functions
+let screenPosition = { x: canvas.width - 200, y: 70 };
+let screenSize = { width: 180, height: 120 };
+
+shareScreenButton.addEventListener('click', async () => {
+  try {
+    screenStream = await navigator.mediaDevices.getDisplayMedia({
+      video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false
     });
+    
+    screenVideo = document.createElement('video');
+    screenVideo.srcObject = screenStream;
+    screenVideo.play();
+    
+    isScreenSharing = true;
+    shareScreenButton.disabled = true;
+    stopScreenShareButton.disabled = false;
+    
+    createScreenSettingsPanel();
+  } catch (error) {
+    console.error('Error sharing screen:', error);
+  }
+});
 
-    // Screen Sharing Functions
-    shareScreenButton.addEventListener('click', async () => {
-      try {
-        screenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: {
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
-          },
-          audio: false
-        });
-        
-        // Create new video element for screen sharing
-        screenVideo = document.createElement('video');
-        screenVideo.srcObject = screenStream;
-        screenVideo.play();
-        
-        isScreenSharing = true;
-        shareScreenButton.disabled = true;
-        stopScreenShareButton.disabled = false;
-        
-        createScreenSettingsPanel();
-        
-      } catch (error) {
-        console.error('Error sharing screen:', error);
-      }
-    });
+stopScreenShareButton.addEventListener('click', () => {
+  if (screenStream) {
+    screenStream.getTracks().forEach(track => track.stop());
+    screenStream = null;
+  }
+  isScreenSharing = false;
+  shareScreenButton.disabled = false;
+  stopScreenShareButton.disabled = true;
+  
+  const panel = document.getElementById('screenSettingsPanel');
+  if (panel) panel.remove();
+});
 
-    stopScreenShareButton.addEventListener('click', () => {
-      if (screenStream) {
-        screenStream.getTracks().forEach(track => track.stop());
-        screenStream = null;
-      }
-      isScreenSharing = false;
-      shareScreenButton.disabled = false;
-      stopScreenShareButton.disabled = true;
-      
-      const panel = document.getElementById('screenSettingsPanel');
-      if (panel) panel.remove();
-    });
+function createScreenSettingsPanel() {
+  const panel = document.createElement('div');
+  panel.id = 'screenSettingsPanel';
+  panel.style.position = 'absolute';
+  panel.style.top = '20px';
+  panel.style.right = '20px';
+  panel.style.backgroundColor = 'rgba(0,0,0,0.7)';
+  panel.style.color = 'white';
+  panel.style.padding = '10px';
+  panel.style.borderRadius = '5px';
+  panel.style.zIndex = '1000';
+  
+  panel.innerHTML = `
+    <h3 style="margin-top:0;">Screen Settings</h3>
+    <label>Width: <input type="number" id="screenWidth" value="${screenSize.width}" min="100" max="400"></label><br>
+    <label>Height: <input type="number" id="screenHeight" value="${screenSize.height}" min="75" max="300"></label><br>
+    <label>X Position: <input type="number" id="screenX" value="${screenPosition.x}" min="0" max="${canvas.width}"></label><br>
+    <label>Y Position: <input type="number" id="screenY" value="${screenPosition.y}" min="0" max="${canvas.height}"></label><br>
+    <button id="applyScreenSettings">Apply</button>
+  `;
+  
+  document.body.appendChild(panel);
+  
+  document.getElementById('applyScreenSettings').addEventListener('click', () => {
+    screenSize.width = parseInt(document.getElementById('screenWidth').value);
+    screenSize.height = parseInt(document.getElementById('screenHeight').value);
+    screenPosition.x = parseInt(document.getElementById('screenX').value);
+    screenPosition.y = parseInt(document.getElementById('screenY').value);
+  });
+}
 
-    function createScreenSettingsPanel() {
-      const panel = document.createElement('div');
-      panel.id = 'screenSettingsPanel';
-      panel.style.position = 'absolute';
-      panel.style.top = '20px';
-      panel.style.right = '20px';
-      panel.style.backgroundColor = 'rgba(0,0,0,0.7)';
-      panel.style.color = 'white';
-      panel.style.padding = '10px';
-      panel.style.borderRadius = '5px';
-      panel.style.zIndex = '1000';
-      
-      panel.innerHTML = `
-        <h3 style="margin-top:0;">Screen Settings</h3>
-        <label>Width: <input type="number" id="screenWidth" value="${screenSize.width}" min="100" max="400"></label>
-        <label>Height: <input type="number" id="screenHeight" value="${screenSize.height}" min="75" max="300"></label>
-        <label>X Position: <input type="number" id="screenX" value="${screenPosition.x}" min="0" max="${canvas.width}"></label>
-        <label>Y Position: <input type="number" id="screenY" value="${screenPosition.y}" min="0" max="${canvas.height}"></label>
-        <button id="applyScreenSettings">Apply</button>
-      `;
-      
-      document.body.appendChild(panel);
-      
-      document.getElementById('applyScreenSettings').addEventListener('click', () => {
-        screenSize.width = parseInt(document.getElementById('screenWidth').value);
-        screenSize.height = parseInt(document.getElementById('screenHeight').value);
-        screenPosition.x = parseInt(document.getElementById('screenX').value);
-        screenPosition.y = parseInt(document.getElementById('screenY').value);
-      });
-    }
-
-    // Theme Toggle
-    const themeToggle = document.createElement('button');
-    themeToggle.className = 'theme-toggle';
-    themeToggle.textContent = '🌗';
-    document.body.appendChild(themeToggle);
-
-    themeToggle.addEventListener('click', () => {
-      document.body.classList.toggle('dark-theme');
-      document.body.style.background = document.body.classList.contains('dark-theme') ? '#1f2937' : '#f3f4f7';
-    });
-
-    // Full Screen Button
-    const fullScreenButton = document.createElement('button');
-    fullScreenButton.className = 'full-screen-button';
-    fullScreenButton.textContent = 'Full Screen';
-    document.body.appendChild(fullScreenButton);
-    fullScreenButton.addEventListener('click', () => {
-      if (canvas.requestFullscreen) {
-        canvas.requestFullscreen();
-      } else if (canvas.webkitRequestFullscreen) {
-        canvas.webkitRequestFullscreen();
-      } else if (canvas.msRequestFullscreen) {
-        canvas.msRequestFullscreen();
-      }
-    });
-
+// IndexedDB functions
 async function saveChunksToDB(chunks) {
   return new Promise((resolve, reject) => {
     const transaction = db.transaction([STORE_NAME], 'readwrite');
     const store = transaction.objectStore(STORE_NAME);
     
-    // Clear old chunks first
     const clearRequest = store.clear();
     
     clearRequest.onsuccess = () => {
-      // Add all chunks
       chunks.forEach((chunk, index) => {
         store.put(chunk, index);
       });
@@ -1258,8 +1214,7 @@ function saveRecordingSession() {
     recording: true,
     timerState,
     timeRemaining,
-    sessionStartTime,
-    totalTimeSpent
+    totalTimeSpent: dailyTimeData[currentDate] || 0
   }));
 }
 
@@ -1287,13 +1242,12 @@ async function finalizeRecording() {
       URL.revokeObjectURL(url);
     }, 100);
     
-    // Clear stored chunks after export
     const transaction = db.transaction([STORE_NAME], 'readwrite');
     const store = transaction.objectStore(STORE_NAME);
     store.clear();
     
     recordedChunks = [];
-    saveTotalTime();
+    saveDailyTime();
     clearRecordingSession();
   } catch (error) {
     console.error("Error finalizing recording:", error);
@@ -1301,18 +1255,81 @@ async function finalizeRecording() {
   }
 }
 
-// Save chunks when page is about to unload
+// Pause timer functionality
+pauseTimerButton.addEventListener('click', () => {
+  isTimerPaused = !isTimerPaused;
+  pauseTimerButton.textContent = isTimerPaused ? 'Resume Timer' : 'Pause Timer';
+  
+  if (isTimerPaused) {
+    clearInterval(timerInterval);
+    if (mediaRecorder && recording) {
+      mediaRecorder.pause();
+    }
+  } else {
+    lastTimeUpdate = Date.now();
+    timerInterval = setInterval(() => {
+      updateTimer();
+      updateTimeTracking();
+    }, 1000);
+    if (mediaRecorder && recording) {
+      mediaRecorder.resume();
+    }
+  }
+});
+
+// Tab functionality
+tabs.forEach(tab => {
+  tab.addEventListener('click', () => {
+    tabs.forEach(t => t.classList.remove('active'));
+    tabContents.forEach(c => c.classList.remove('active'));
+    
+    tab.classList.add('active');
+    const tabId = tab.getAttribute('data-tab');
+    document.getElementById(tabId).classList.add('active');
+  });
+});
+
+// Theme toggle
+const themeToggle = document.createElement('button');
+themeToggle.className = 'theme-toggle';
+themeToggle.textContent = '🌗';
+themeToggle.style.position = 'fixed';
+themeToggle.style.top = '20px';
+themeToggle.style.right = '20px';
+themeToggle.style.zIndex = '1000';
+document.body.appendChild(themeToggle);
+
+themeToggle.addEventListener('click', () => {
+  document.body.classList.toggle('dark-theme');
+  document.body.style.background = document.body.classList.contains('dark-theme') ? '#1f2937' : '#f3f4f7';
+});
+
+// Full screen button
+const fullScreenButton = document.createElement('button');
+fullScreenButton.className = 'full-screen-button';
+fullScreenButton.textContent = 'Full Screen';
+fullScreenButton.style.position = 'fixed';
+fullScreenButton.style.top = '60px';
+fullScreenButton.style.right = '20px';
+fullScreenButton.style.zIndex = '1000';
+document.body.appendChild(fullScreenButton);
+
+fullScreenButton.addEventListener('click', () => {
+  if (canvas.requestFullscreen) {
+    canvas.requestFullscreen();
+  } else if (canvas.webkitRequestFullscreen) {
+    canvas.webkitRequestFullscreen();
+  }
+});
+
+// Save data before unload
 window.addEventListener('beforeunload', async (event) => {
   if (recording && mediaRecorder && mediaRecorder.state !== 'inactive') {
-    // Request final chunk
     mediaRecorder.requestData();
-    
-    // Small delay to ensure data is available
     await new Promise(resolve => setTimeout(resolve, 100));
-    
-    // Save chunks to DB and session state
     await saveChunksToDB(recordedChunks);
     saveRecordingSession();
+    saveDailyTime();
   }
 });
 
@@ -1320,14 +1337,12 @@ window.addEventListener('beforeunload', async (event) => {
 window.addEventListener('load', async () => {
   await initDB();
   initializeVideo();
-  loadTasks();
-  renderRoutine();
-  loadTodaysRoutine();
+  loadInitialData();
+  addGoalControls();
   
-  // Check for existing recording session
   const savedSession = loadRecordingSession();
   if (savedSession && savedSession.recording) {
-    if (confirm("You have an unfinished recording session. Would you like to resume?")) {
+    if (confirm("Unfinished session found. Resume?")) {
       startRecordingButton.click();
     } else {
       clearRecordingSession();
@@ -1337,15 +1352,6 @@ window.addEventListener('load', async () => {
     }
   }
 });
-
-    // Initialize the app
-    initializeVideo();
-    loadTasks();
-    renderRoutine();
-    loadTodaysRoutine();
-    
-    // Start time tracking interval (runs every second)
-    setInterval(updateTimeTracking, 1000);
-  </script>
+</script>
 </body>
 </html>
